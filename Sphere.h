@@ -13,5 +13,5 @@ public:
 	~Sphere() = default;
 
 	T CheckCollision(RayLight<T> ray);
-	void CheckCollisionCuda(std::vector<T>& out, std::vector<RayLight<T>>& rayList, CudaPointers<T> &cp);
+	void CheckCollisionCuda(std::vector<T>& out, CudaPointers<T> &cp);
 };

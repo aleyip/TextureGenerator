@@ -28,7 +28,7 @@ public:
 	virtual ~Object() = default;
 
 	virtual T CheckCollision(RayLight<T> ray);
-	virtual void CheckCollisionCuda(std::vector<T>& out, std::vector<RayLight<T>> &rayList, CudaPointers<T>& cp);
+	virtual void CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp);
 };
 
 #include "Object.cu"

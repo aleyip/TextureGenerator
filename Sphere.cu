@@ -40,7 +40,7 @@ __global__ void SphereCollisor_kernel(T* out, const T* rayLight, const T radius,
 }
 
 template <class T>
-cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const std::vector<RayLight<T>>& rayList, const T radius, const vec3<T> position, CudaPointers<T>& cp) {
+cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const T radius, const vec3<T> position, CudaPointers<T>& cp) {
     cudaError_t cudaStatus;
 
     //// Transfer data from host to device memory
@@ -48,6 +48,18 @@ cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const std::vector<RayLig
     //if (cudaStatus != cudaSuccess) {
     //    fprintf(stderr, "cudaMemcpy failed in d_system Host to Device!\n");
     //    goto ErrorCollisor;
+    //}
+
+    ////Transfer data back to host memory
+    //cudaStatus = cudaMemcpy(rayList.data(), cp.d_rayList, sizeof(RayLight<T>) * rayList.size(), cudaMemcpyDeviceToHost);
+    //if (cudaStatus != cudaSuccess) {
+    //	fprintf(stderr, "cudaMemcpy failed in d_out Device to Host!\n");
+    //	goto ErrorCollisor;
+    //}
+
+    //for (int i = 0; i < 100; i++)
+    //{
+    //	printf("b%03d \t %f %f %f \t %f %f %f\n", i, rayList[i].origin.x, rayList[i].origin.y, rayList[i].origin.z, rayList[i].direction.x, rayList[i].direction.y, rayList[i].direction.z);
     //}
 
     cudaStatus = cudaMemcpy(cp.d_position, &position, sizeof(vec3<T>), cudaMemcpyHostToDevice);
@@ -59,8 +71,8 @@ cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const std::vector<RayLig
     // Executing kernel 
     {
         dim3 threadsPerBlock(1024);
-        dim3 blocksPerGrid(ceil(double(rayList.size()) / double(threadsPerBlock.x)));
-        SphereCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_rayList, radius, cp.d_position, rayList.size());
+        dim3 blocksPerGrid(ceil(double(out.size()) / double(threadsPerBlock.x)));
+        SphereCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_rayList, radius, cp.d_position, out.size());
     }
 
     // Check for any errors launching the kernel
@@ -79,7 +91,7 @@ cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const std::vector<RayLig
     }
 
     // Transfer data back to host memory
-    cudaStatus = cudaMemcpy(out.data(), cp.d_out, sizeof(T) * rayList.size(), cudaMemcpyDeviceToHost);
+    cudaStatus = cudaMemcpy(out.data(), cp.d_out, sizeof(T) * out.size(), cudaMemcpyDeviceToHost);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed in d_out Device to Host!\n");
         goto ErrorCollisor;
@@ -90,8 +102,8 @@ ErrorCollisor:
 }
 
 template <class T>
-void Sphere<T>::CheckCollisionCuda(std::vector<T>& out, std::vector<RayLight<T>>& rayList, CudaPointers<T>& cp) {
-    cudaError_t cudaStatus = SphereCollisor_wrapper<T>(out, rayList, diameter / 2., position, cp);
+void Sphere<T>::CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp) {
+    cudaError_t cudaStatus = SphereCollisor_wrapper<T>(out, diameter / 2., position, cp);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "Sphere Collisor Failed\n");
     }

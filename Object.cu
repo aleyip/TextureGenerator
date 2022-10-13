@@ -6,7 +6,7 @@ T Object<T>::CheckCollision(RayLight<T> ray) {
 }
 
 template <class T>
-void Object<T>::CheckCollisionCuda(std::vector<T> &out, std::vector<RayLight<T>> &rayList, CudaPointers<T>& cp) {
+void Object<T>::CheckCollisionCuda(std::vector<T> &out, CudaPointers<T>& cp) {
 	for (T& value : out)
 		value = -1;
 }

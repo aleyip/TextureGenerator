@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 #include "RayLight.h"
 
@@ -13,6 +14,9 @@ public:
 	~CudaPointers() {
 		free();
 	}
+
+	void uploadRayList(std::vector<RayLight<T>> rayList);
+	void downloadRayList(std::vector<RayLight<T>>& rayList);
 	
 	void allocate(int totalSize, int usize, int vsize, int ssize, int tsize);
 	void free();

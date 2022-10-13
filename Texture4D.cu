@@ -41,14 +41,27 @@ __global__ void raylightgenerator_kernel(T* out, int v, int s, int t, int* size,
 	int l = threadIdx.y;
 	int m = threadIdx.z;
 	int n = blockIdx.y;
+	int index = 6 * (u * wsTotal + ws * (ws * (ws * n + m) + l) + k);
 
-	T angle[] = { M_PI * (2 * ((n - ws) / (T)(ws - 1) - u) / size[0] + 1),
-		M_PI * ((v + (m - ws) / (T)(ws - 1)) / (size[1] - 1) - 0.5),
-		M_PI * ((s + (l - ws) / (T)(ws - 1)) / (size[2] - 1) - 0.5),
-		M_PI * ((t + (k - ws) / (T)(ws - 1)) / (size[3] - 1) - 0.5), };
+	T angle[4];
+	if (ws == 1) {
+		angle[0] = M_PI * ((-2 * u) / (T)size[0] + 1);
+		angle[1] = M_PI * (v / (T)(size[1] - 1) - 0.5);
+		angle[2] = M_PI * (s / (T)(size[2] - 1) - 0.5);
+		angle[3] = M_PI * (t / (T)(size[3] - 1) - 0.5);
+	}
+	else {
+		angle[0] = M_PI * (2 * ((n - ws) / (T)(ws - 1) - u) / size[0] + 1);
+		angle[1] = M_PI * ((v + (m - ws) / (T)(ws - 1)) / (size[1] - 1) - 0.5);
+		angle[2] = M_PI * ((s + (l - ws) / (T)(ws - 1)) / (size[2] - 1) - 0.5);
+		angle[3] = M_PI * ((t + (k - ws) / (T)(ws - 1)) / (size[3] - 1) - 0.5);
+	}
 
 	T pos[3] = { radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]) };
 	T dir[3] = { sin(angle[2]) * cos(angle[3]), sin(angle[3]), cos(angle[2]) * cos(angle[3]) };
+	out[index] = pos[0];
+	out[index + 1] = pos[1];
+	out[index + 2] = pos[2];
 
 	normalize<T>(pos);
 	T versorRight[] = { -pos[2], 0., pos[0] };
@@ -62,17 +75,20 @@ __global__ void raylightgenerator_kernel(T* out, int v, int s, int t, int* size,
 		-(versorRight[2] * dir[0] + versorUp[2] * dir[1] + pos[2] * dir[2])
 	};
 
-	int index = 6 * (u * wsTotal + ws * (ws * (ws * n + m) + l) + k);
-	out[index] = pos[0];
-	out[index + 1] = pos[1];
-	out[index + 2] = pos[2];
-	out[index + 3] = dir[0];
-	out[index + 4] = dir[1];
-	out[index + 5] = dir[2];
+	out[index + 3] = vD[0];
+	out[index + 4] = vD[1];
+	out[index + 5] = vD[2];
+
+	//out[index] = angle[0];
+	//out[index + 1] = angle[1];
+	//out[index + 2] = angle[2];
+	//out[index + 3] = angle[3];
+	//out[index + 4] = dir[1];
+	//out[index + 5] = dir[2];
 }
 
 template<class T>
-cudaError_t RayLightGenerator_wrapper(std::vector<RayLight<T>>& out, int v, int s, int t, int* size, T radius, int ws, int wsTotal, CudaPointers<T>& cp) {
+cudaError_t RayLightGenerator_wrapper(int v, int s, int t, int* size, T radius, int ws, int wsTotal, CudaPointers<T>& cp) {
 	cudaError_t cudaStatus;
 
 	//auto start = std::chrono::steady_clock::now();
@@ -102,7 +118,7 @@ cudaError_t RayLightGenerator_wrapper(std::vector<RayLight<T>>& out, int v, int 
 	//auto end = std::chrono::steady_clock::now();
 	//std::cout << "Cuda Light Generator Elapsed time in milliseconds: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << " us" << std::endl;
 
-	// Transfer data back to host memory
+	//Transfer data back to host memory
 	//cudaStatus = cudaMemcpy(out.data(), cp.d_rayList, sizeof(RayLight<T>) * size[0] * wsTotal, cudaMemcpyDeviceToHost);
 	//if (cudaStatus != cudaSuccess) {
 	//	fprintf(stderr, "cudaMemcpy failed in d_out Device to Host!\n");
@@ -111,7 +127,7 @@ cudaError_t RayLightGenerator_wrapper(std::vector<RayLight<T>>& out, int v, int 
 
 	//for (int i = 0; i < 100; i++)
 	//{
-	//	printf("%03d \t %f %f %f \t %f %f %f\n", i, out[i].origin.x, out[i].origin.y, out[i].origin.z, out[i].direction.x, out[i].direction.y, out[i].direction.z);
+	//	printf("a%03d \t %f %f %f \t %f %f %f\n", i, out[i].origin.x, out[i].origin.y, out[i].origin.z, out[i].direction.x, out[i].direction.y, out[i].direction.z);
 	//}
 
 ErrorRayLight:
@@ -197,10 +213,10 @@ void Texture4D<T>::compileToUnity(std::string s) {
 }
 
 template <class T>
-void Texture4D<T>::RayLightGeneratorCuda(std::vector<RayLight<T>>& out, int v, int s, int t, T radius, int ws, int wsTotal, CudaPointers<T> &cp) {
+void Texture4D<T>::RayLightGeneratorCuda(int v, int s, int t, T radius, int ws, int wsTotal, CudaPointers<T> &cp) {
 	int size[] = { usize, vsize, ssize, tsize };
 
-	cudaError_t cudaStatus = RayLightGenerator_wrapper<T>(out, v, s, t, size, radius, ws, wsTotal, cp);
+	cudaError_t cudaStatus = RayLightGenerator_wrapper<T>(v, s, t, size, radius, ws, wsTotal, cp);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "Ray Light Generator Failed\n");
 	}

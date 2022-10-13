@@ -48,6 +48,26 @@ ErrorAllocate:
 }
 
 template<class T>
+void CudaPointers<T>::uploadRayList(std::vector<RayLight<T>> rayList) {
+	cudaError_t cudaStatus;
+	// Transfer data from host to device memory
+	cudaStatus = cudaMemcpy(d_rayList, rayList.data(), sizeof(RayLight<T>) * rayList.size(), cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed in d_rayList Host to Device!\n");
+	}
+}
+
+template<class T>
+void CudaPointers<T>::downloadRayList(std::vector<RayLight<T>>& rayList) {
+	cudaError_t cudaStatus;
+	// Transfer data back to host memory
+	cudaStatus = cudaMemcpy(rayList.data(), d_rayList, sizeof(RayLight<T>) * rayList.size(), cudaMemcpyDeviceToHost);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed in d_rayList Device to Host!\n");
+	}
+}
+
+template<class T>
 void CudaPointers<T>::free() {
 	cudaFree(d_rayList);
 	cudaFree(d_out);

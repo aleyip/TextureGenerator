@@ -41,6 +41,6 @@ public:
 
 	void compileToUnity(std::string s);
 
-	void RayLightGeneratorCuda(std::vector<RayLight<T>>& out, int v, int s, int t, T radius, int ws, int wsTotal, CudaPointers<T>& cp);
+	void RayLightGeneratorCuda(int v, int s, int t, T radius, int ws, int wsTotal, CudaPointers<T>& cp);
 };
 
