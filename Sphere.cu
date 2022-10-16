@@ -43,25 +43,6 @@ template <class T>
 cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const T radius, const vec3<T> position, CudaPointers<T>& cp) {
     cudaError_t cudaStatus;
 
-    //// Transfer data from host to device memory
-    //cudaStatus = cudaMemcpy(cp.d_rayList, rayList.data(), sizeof(RayLight<T>) * rayList.size(), cudaMemcpyHostToDevice);
-    //if (cudaStatus != cudaSuccess) {
-    //    fprintf(stderr, "cudaMemcpy failed in d_system Host to Device!\n");
-    //    goto ErrorCollisor;
-    //}
-
-    ////Transfer data back to host memory
-    //cudaStatus = cudaMemcpy(rayList.data(), cp.d_rayList, sizeof(RayLight<T>) * rayList.size(), cudaMemcpyDeviceToHost);
-    //if (cudaStatus != cudaSuccess) {
-    //	fprintf(stderr, "cudaMemcpy failed in d_out Device to Host!\n");
-    //	goto ErrorCollisor;
-    //}
-
-    //for (int i = 0; i < 100; i++)
-    //{
-    //	printf("b%03d \t %f %f %f \t %f %f %f\n", i, rayList[i].origin.x, rayList[i].origin.y, rayList[i].origin.z, rayList[i].direction.x, rayList[i].direction.y, rayList[i].direction.z);
-    //}
-
     cudaStatus = cudaMemcpy(cp.d_position, &position, sizeof(vec3<T>), cudaMemcpyHostToDevice);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed in d_position Host to Device!\n");

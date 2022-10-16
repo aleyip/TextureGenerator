@@ -20,8 +20,9 @@
 
 #include "CudaPointers.h"
 
-#define NUMOBJ 1
-#define WINDOW_SIZE 0
+#define NUMOBJ 2
+#define WINDOW_SIZE 3
+#define BUFFERSIZE 100000000
 
 #define TEXU 512
 #define TEXV 256
@@ -141,7 +142,7 @@ void generateViewPortCuda(ObjectT** obj) {
 	for (int j = 0; j < NUMOBJ; j++)
 	{
 		std::vector<typeT> dList = std::vector<typeT>(rayList.size());
-		obj[j]->CheckCollisionCuda(dList, cp);
+		obj[j]->CheckCollisionCuda(dList, img.total(), cp);
 		for(int i = 0; i < img.total(); i++)
 			if ((dList[i] < distList[i] && dList[i] >= 0) || distList[i] == -1) {
 				distList[i] = dList[i];
@@ -235,7 +236,7 @@ void generateTexture(ObjectT** obj) {
 									vD = vD * (-1);
 									RayLightT ray = RayLightT(pos, vD);
 
-									//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f\n", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
+									printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
 
 									cv::Vec4d color;
 									double dist = -1;
@@ -246,8 +247,10 @@ void generateTexture(ObjectT** obj) {
 											dist = d;
 											color = obj[i]->color;
 										}
+										printf("dist: %f %f ", d, dist);
 									}
 									if (dist >= 0)sumPixel += color;
+									std::cout << std::endl;
 								}
 					tex(u, v, s, t) = sumPixel * denom;
 				}
@@ -285,159 +288,143 @@ void generateTextureCuda(ObjectT** obj) {
 	const int ws = WINDOW_SIZE * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
+	const int bufferSize = BUFFERSIZE / wsTotal;
+	const int totalSize = TEXU * TEXV * TEXS * TEXT;
+
 	int size[] = { TEXU,TEXV,TEXS,TEXT };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
 
 	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
-	double halfinc[4];
-	if (WINDOW_SIZE == 0) {
-		halfinc[0] = 0;
-		halfinc[1] = 0;
-		halfinc[2] = 0;
-		halfinc[3] = 0;
-	}
-	else {
-		halfinc[0] = inc[0] / (2. * WINDOW_SIZE);
-		halfinc[1] = inc[1] / (2. * WINDOW_SIZE);
-		halfinc[2] = inc[2] / (2. * WINDOW_SIZE);
-		halfinc[3] = inc[3] / (2. * WINDOW_SIZE);
-	}
 
 	typeT radius = 3.5;
 
 	typeT denom = 1. / wsTotal;
-	std::cout << denom << std::endl;
-
-	int totalSize = size[0] * wsTotal;
+	std::cout << "Denominador: " << denom << std::endl;
 
 	//std::vector<RayLightT> rayList = std::vector< RayLightT>(totalSize);
-	std::vector<typeT> dist = std::vector< typeT>(totalSize);
-	std::vector<int> objSel = std::vector< int>(totalSize);
-	std::vector<typeT> d = std::vector<typeT>(totalSize);
+	std::vector<typeT> dist = std::vector< typeT>(bufferSize * wsTotal);
+	std::vector<int> objSel = std::vector<int>(bufferSize * wsTotal);
+	std::vector<typeT> d = std::vector<typeT>(bufferSize * wsTotal);
 
 	CudaPointersT cp;
-	cp.allocate(totalSize, TEXU, TEXV, TEXS, TEXT);
+	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
+	cp.allocate(bufferSize * wsTotal, TEXU, TEXV, TEXS, TEXT);
 
 	std::cout << "Compile Texture" << std::endl;
-	auto start = std::chrono::steady_clock::now();
-	for (int t = 0; t < size[3]; t++) {
-		std::cout << "Step t" << t << std::endl;
-		for (int s = 0; s < size[2]; s++) {
-			std::cout << "Step t" << t << " s " << s << std::endl;
-			auto start = std::chrono::steady_clock::now();
-			for (int v = 0; v < size[1]; v++)
-			{
-				//auto start = std::chrono::steady_clock::now();
-				tex.RayLightGeneratorCuda(v, s, t, radius, ws, wsTotal, cp);
-				//cp.downloadRayList(rayList);
-				//if (s == 16 && t == 16)
-				//	for (int i = 0; i < 100; i++) {
-				//		printf("%d %d %d %d pos: %f %f %f dir: %f %f %f\n", i, v, s, t, rayList[i].origin.x, rayList[i].origin.y, rayList[i].origin.z, rayList[i].direction.x, rayList[i].direction.y, rayList[i].direction.z);
-				//	}
-				//auto end = std::chrono::steady_clock::now();
-				//std::cout << "Cuda Light Generator Elapsed time in milliseconds: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << " us" << std::endl;
+	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+	int length = bufferSize;
+	int tview = -1;
+	while (countLoop < totalSize)
+	{
+		auto start = std::chrono::steady_clock::now();
 
-				//return;
-//#pragma omp parallel for
-//				for (int u = 0; u < size[0]; u++)
-//				{
-//					double angleBase[] = { -(inc[0] * u - M_PI), inc[1] * v - M_PI_2, inc[2] * s - M_PI_2, inc[3] * t - M_PI_2 };
-//
-//					for (int t = -WINDOW_SIZE, count = 0; t <= WINDOW_SIZE; t++)
-//						for (int k = -WINDOW_SIZE; k <= WINDOW_SIZE; k++)
-//							for (int j = -WINDOW_SIZE; j <= WINDOW_SIZE; j++)
-//								for (int i = -WINDOW_SIZE; i <= WINDOW_SIZE; i++, count++)
-//								{
-//									typeT angle[] = { angleBase[0] + i * halfinc[0], angleBase[1] + j * halfinc[1], angleBase[2] + t * halfinc[2], angleBase[3] + k * halfinc[3] };
-//
-//									vec3T pos = vec3T(radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]));
-//									vec3T dir = vec3T(sin(angle[2]) * cos(angle[3]), sin(angle[3]), cos(angle[2]) * cos(angle[3]));
-//
-//									vec3T versorForward(pos);
-//									versorForward.normalize();
-//									vec3T versorRight = vec3(-versorForward.z, 0., versorForward.x);
-//									versorRight.normalize();
-//									vec3T versorUp = vec3(-versorRight.z * versorForward.y, versorRight.z * versorForward.x - versorRight.x * versorForward.z, versorRight.x * versorForward.y);
-//									versorUp.normalize();
-//
-//									vec3T vD = vec3T(
-//										versorRight.x * dir.x + versorUp.x * dir.y + versorForward.x * dir.z,
-//										versorRight.y * dir.x + versorUp.y * dir.y + versorForward.y * dir.z,
-//										versorRight.z * dir.x + versorUp.z * dir.y + versorForward.z * dir.z
-//									);
-//									vD = vD * (-1);
-//									rayList[wsTotal * u + count] = RayLightT(pos, vD);
-//								}
-//				}
-//				//auto end = std::chrono::steady_clock::now();
-//				//for (RayLightT ray : rayList)
-//				//	printf("pos: % f % f % f dir : % f % f % f\n", ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
-//				//std::cout << "Ray List Elapsed time in milliseconds: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << " ms" << std::endl;
+		std::cout << countLoop << "/" << totalSize;
 
-				//auto start2 = std::chrono::steady_clock::now();
-				for (int& i : objSel)
-					i = -1;
-				for (typeT& i : dist)
-					i = -1;
-				for (int o = 0; o < NUMOBJ; o++)
-				{
-					obj[o]->CheckCollisionCuda(d, cp);
-					//if(s==16 && t == 16)
-					//	for (int i = 0; i < 100; i++) {
-					//		printf("%d %f %d %f\n", i, d[i], objSel[i], dist[i]);
-					//	}
+		tex.RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
+		//std::vector<RayLightT> rayList = std::vector<RayLightT>(bufferSize * wsTotal);
+		//cp.downloadRayList(rayList);
+		//for (int i = 0; i < rayList.size(); i++) {
+		//	int index = countLoop + i / wsTotal;
+		//	int u = (index) / (size[3] * size[2] * size[1]);
+		//	int v = ((index / size[3]) / size[2]) % size[1];
+		//	int s = (index / size[3]) % size[2];
+		//	int t = index % size[3];
+		//	if (u == 256 && v == 128 && s == 0 && t == 0) {
+		//		printf("u: %d v : %d s: %d t: %d ", index / (size[3] * size[2] * size[1]), ((index / size[3]) / size[2]) % size[1], (index / size[3]) % size[2], index % size[3]);
+		//		printf("%d pos: %f %f %f dir: %f %f %f\n", i, rayList[i].origin.x, rayList[i].origin.y, rayList[i].origin.z, rayList[i].direction.x, rayList[i].direction.y, rayList[i].direction.z);
+		//	}
+		//}
+		//auto end = std::chrono::steady_clock::now();
+		//std::cout << "Ray Light Elapsed time in milliseconds: "
+		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+		//	<< " ms" << std::endl;
+
+		//auto start1 = std::chrono::steady_clock::now();
+		for (int& i : objSel)
+			i = -1;
+		for (typeT& i : dist)
+			i = -1;
+		for (int o = 0; o < NUMOBJ; o++)
+		{
+			obj[o]->CheckCollisionCuda(d, length, cp);
 #pragma omp parallel for
-					for (int i = 0; i < dist.size(); i++)
-						if ((d[i] < dist[i] && d[i] >= 0) || dist[i] == -1) {
-							dist[i] = d[i];
-							objSel[i] = o;
-						}
+			for (int i = 0; i < d.size(); i++)
+				if ((d[i] < dist[i] && d[i] >= 0) || dist[i] == -1) {
+					dist[i] = d[i];
+					objSel[i] = o;
 				}
-				//auto end2 = std::chrono::steady_clock::now();
-				//std::cout << "Cuda Collision Elapsed time in milliseconds: " << std::chrono::duration_cast<std::chrono::microseconds>(end2 - start2).count() << " us" << std::endl;
 
-
-//				for (int& i : objSel)
-//					i = -1;
-//#pragma omp parallel for
-//				for(int i = 0; i < rayList.size(); i++)
-//					for (int o = 0; o < NUMOBJ; o++)
-//					{
-//						typeT d = obj[o]->CheckCollision(rayList[i]);
-//						if ((d < dist[i] && d >= 0) || dist[i] == -1) {
-//							dist[i] = d;
-//							objSel[i] = o;
-//						}
-//					}
-
-				//auto start3 = std::chrono::steady_clock::now();
-#pragma omp parallel for
-				for (int u = 0; u < size[0]; u++)
-				{
-					cv::Vec4d sumPixel = cv::Vec4d(0, 0, 0, 0);
-					for (int i = 0; i < wsTotal; i++)
-					{
-						if (dist[wsTotal * u + i] >= 0)
-							sumPixel += obj[objSel[wsTotal * u + i]]->color;
-					}
-					tex(u, v, s, t) = sumPixel * denom;
-				}
-				//auto end3 = std::chrono::steady_clock::now();
-				//std::cout << "Texture Elapsed time in milliseconds: " << std::chrono::duration_cast<std::chrono::microseconds>(end3 - start3).count() << " ms" << std::endl;
-			}
-			auto end = std::chrono::steady_clock::now();
-			std::cout << "Elapsed time in milliseconds: "
-				<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-				<< " ms" << std::endl;
+			//std::cout << "Size d:" << d.size() << std::endl;
+			//for (int i = 0; i < d.size(); i++) {
+			//	int index = countLoop + i / wsTotal;
+			//	int u = (index) / (size[3] * size[2] * size[1]);
+			//	int v = ((index / size[3]) / size[2]) % size[1];
+			//	int s = (index / size[3]) % size[2];
+			//	int t = index % size[3];
+			//	if (u == 256 && v == 128 && s == 0 && t == 0) {
+			//		printf("u: %d v : %d s: %d t: %d ", u, v, s, t);
+			//		printf("dist %d: %f %f %d\n", o, d[i], dist[i], objSel[i]);
+			//	}
+			//}
 		}
-	}
+		//auto end1 = std::chrono::steady_clock::now();
+		//std::cout << "Collisor Elapsed time in milliseconds: "
+		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1).count()
+		//	<< " ms" << std::endl;
+
+		//auto start2 = std::chrono::steady_clock::now();
+#pragma omp parallel for
+		for (int i = 0; i < length; i++)
+		{
+			//int u = (countLoop + i) / (size[3] * size[2] * size[1]);
+			//int v = (((countLoop + i) / size[3]) / size[2]) % size[1];
+			//int s = ((countLoop + i) / size[3]) % size[2];
+			//int t = (countLoop + i) % size[3];
+
+			cv::Vec4d sumPixel = cv::Vec4d(0, 0, 0, 0);
+			for (int j = 0; j < wsTotal; j++)
+			{/*
+				if (u == 256 && v == 128 && s == 0 && t == 0) {
+					printf("u: %d v: %d s: %d t: %d ", u, v, s, t);
+					std::cout << i << " " << j << " " << wsTotal * i + j << " " << dist[wsTotal * i + j] << " " << objSel[wsTotal * i + j];
+				}*/
+				if (dist[wsTotal * i + j] >= 0)
+				{
+					sumPixel += obj[objSel[wsTotal * i + j]]->color;/*
+					if (u == 256 && v == 128 && s == 0 && t == 0) {
+						std::cout << " Color: " << color << sumPixel << std::endl;
+					}*/
+				}
+				//else if (u == 256 && v == 128 && s == 0 && t == 0) std::cout << " No hit" << std::endl;
+			}
+			tex.texture.at<cv::Vec<typeT,4>>(countLoop + i) = sumPixel * denom;
+			//tex(u, v, s, t) = sumPixel * denom;
+			//if (u == 256 && v == 128 && s == 0 && t == 0)
+			//	std::cout << " Final Color: " << sumPixel * denom << tex(u, v, s, t) << std::endl;
+
+		}
+
+		auto end = std::chrono::steady_clock::now();
+		std::cout << " Compare Elapsed time in milliseconds: "
+			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+			<< " ms" << std::endl;
+		//return;
+
+		countLoop += length;
+		if (totalSize - countLoop < bufferSize)
+			length = totalSize - countLoop;
+	} 
+	//delete& dist;
+	//delete& objSel;
+	//delete& d;
 
 	cp.free();
 
-	cv::Mat img = cv::Mat(256, 512, CV_64FC4);
-	for (int u = 0; u < 512; u++)
-		for (int v = 0; v < 256; v++)
-			img.at<cv::Vec4d>(v, u) = tex(u, v, 16, 16);
+	cv::Mat img = cv::Mat(TEXV, TEXU, CV_64FC4);
+	for (int u = 0; u < TEXU; u++)
+		for (int v = 0; v < TEXV; v++)
+			//img.at<cv::Vec4d>(v, u) = tex(u, v, 0, 0);
+			img.at<cv::Vec4d>(v, u) = tex(u, v, TEXS / 2, TEXT / 2);
 	img.convertTo(img, CV_8UC4, 255);
 	cv::imshow("Teste", img);
 	cv::waitKey(0);
@@ -464,9 +451,9 @@ int main()
 	//obj[3] = new CubeT(vec3T(.68, .71, -1.2), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 0, 1));
 
 	//generateTexture(obj);
-	//generateTextureCuda(obj);
+	generateTextureCuda(obj);
 	//generateViewPort(obj);
-	generateViewPortCuda(obj);
+	//generateViewPortCuda(obj);
 	return 0;
 }
 
