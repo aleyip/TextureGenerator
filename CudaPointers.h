@@ -7,7 +7,7 @@ template<class T>
 class CudaPointers
 {
 public:
-	T* d_rayList = 0, * d_out = 0, * d_position = 0;
+	T* d_rayList = 0, * d_out = 0, * d_position = 0, * d_rotation = 0;
 	int* d_size = 0;
 
 	CudaPointers() = default;

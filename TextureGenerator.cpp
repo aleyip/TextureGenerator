@@ -1,6 +1,8 @@
 // TextureGenerator.cpp : Este arquivo contém a função 'main'. A execução do programa começa e termina ali.
 //
 
+#include <math.h>
+
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -20,7 +22,7 @@
 
 #include "CudaPointers.h"
 
-#define NUMOBJ 2
+#define NUMOBJ 7
 #define WINDOW_SIZE 3
 #define BUFFERSIZE 100000000
 
@@ -124,16 +126,13 @@ void generateViewPortCuda(ObjectT** obj) {
 				viewDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
 			);
 
-			if ((r == 1024 || r == 0) && c == 1024) {
-				printf("a %d %d %f, %f, %f\n", r, c, vDaux.x, vDaux.y, vDaux.z);
-				printf("b %d %d %f, %f, %f\n", r, c, vD.x, vD.y, vD.z);
-			}
+			//if ((r == 1024 || r == 0) && c == 1024) {
+			//	printf("a %d %d %f, %f, %f\n", r, c, vDaux.x, vDaux.y, vDaux.z);
+			//	printf("b %d %d %f, %f, %f\n", r, c, vD.x, vD.y, vD.z);
+			//}
 
 			rayList[img.rows * c + r] = RayLightT(viewPos, vD);
-			ObjectT* colObj[1];
 		}
-
-	cp.uploadRayList(rayList);
 
 	std::vector<typeT>distList = std::vector<typeT>(img.total(), -1);
 	std::vector<int>selObjList = std::vector<int>(img.total(), -1);
@@ -142,7 +141,7 @@ void generateViewPortCuda(ObjectT** obj) {
 	for (int j = 0; j < NUMOBJ; j++)
 	{
 		std::vector<typeT> dList = std::vector<typeT>(rayList.size());
-		obj[j]->CheckCollisionCuda(dList, img.total(), cp);
+		obj[j]->CheckCollisionCuda(dList, cp);
 		for(int i = 0; i < img.total(); i++)
 			if ((dList[i] < distList[i] && dList[i] >= 0) || distList[i] == -1) {
 				distList[i] = dList[i];
@@ -161,8 +160,8 @@ void generateViewPortCuda(ObjectT** obj) {
 
 	cv::resize(img, img, cv::Size(720, 720));
 	img.convertTo(img, CV_8UC4, 255, 0);
-	cv::imshow("teste", img);
-	cv::imwrite("D:/testeGen.png", img);
+	cv::imshow("teste2", img);
+	cv::imwrite("D:/testeGenCuda.png", img);
 	cv::waitKey(0);
 }
 
@@ -236,7 +235,7 @@ void generateTexture(ObjectT** obj) {
 									vD = vD * (-1);
 									RayLightT ray = RayLightT(pos, vD);
 
-									printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
+									//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
 
 									cv::Vec4d color;
 									double dist = -1;
@@ -247,10 +246,10 @@ void generateTexture(ObjectT** obj) {
 											dist = d;
 											color = obj[i]->color;
 										}
-										printf("dist: %f %f ", d, dist);
+										//printf("dist: %f %f ", d, dist);
 									}
 									if (dist >= 0)sumPixel += color;
-									std::cout << std::endl;
+									//std::cout << std::endl;
 								}
 					tex(u, v, s, t) = sumPixel * denom;
 				}
@@ -272,6 +271,7 @@ void generateTexture(ObjectT** obj) {
 			img.at<cv::Vec4d>(v, u) = tex(u, v, 16, 16);
 	img.convertTo(img, CV_8UC4, 255);
 	cv::imshow("Teste", img);
+	cv::imwrite("D:/testeTexGen.png", img);
 	cv::waitKey(0);
 
 	{
@@ -313,7 +313,6 @@ void generateTextureCuda(ObjectT** obj) {
 	std::cout << "Compile Texture" << std::endl;
 	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
 	int length = bufferSize;
-	int tview = -1;
 	while (countLoop < totalSize)
 	{
 		auto start = std::chrono::steady_clock::now();
@@ -346,7 +345,7 @@ void generateTextureCuda(ObjectT** obj) {
 			i = -1;
 		for (int o = 0; o < NUMOBJ; o++)
 		{
-			obj[o]->CheckCollisionCuda(d, length, cp);
+			obj[o]->CheckCollisionCuda(d, cp);
 #pragma omp parallel for
 			for (int i = 0; i < d.size(); i++)
 				if ((d[i] < dist[i] && d[i] >= 0) || dist[i] == -1) {
@@ -361,7 +360,7 @@ void generateTextureCuda(ObjectT** obj) {
 			//	int v = ((index / size[3]) / size[2]) % size[1];
 			//	int s = (index / size[3]) % size[2];
 			//	int t = index % size[3];
-			//	if (u == 256 && v == 128 && s == 0 && t == 0) {
+			//	if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0)) {
 			//		printf("u: %d v : %d s: %d t: %d ", u, v, s, t);
 			//		printf("dist %d: %f %f %d\n", o, d[i], dist[i], objSel[i]);
 			//	}
@@ -376,18 +375,18 @@ void generateTextureCuda(ObjectT** obj) {
 #pragma omp parallel for
 		for (int i = 0; i < length; i++)
 		{
-			//int u = (countLoop + i) / (size[3] * size[2] * size[1]);
-			//int v = (((countLoop + i) / size[3]) / size[2]) % size[1];
-			//int s = ((countLoop + i) / size[3]) % size[2];
-			//int t = (countLoop + i) % size[3];
+			int u = (countLoop + i) / (size[3] * size[2] * size[1]);
+			int v = (((countLoop + i) / size[3]) / size[2]) % size[1];
+			int s = ((countLoop + i) / size[3]) % size[2];
+			int t = (countLoop + i) % size[3];
 
 			cv::Vec4d sumPixel = cv::Vec4d(0, 0, 0, 0);
 			for (int j = 0; j < wsTotal; j++)
-			{/*
-				if (u == 256 && v == 128 && s == 0 && t == 0) {
-					printf("u: %d v: %d s: %d t: %d ", u, v, s, t);
-					std::cout << i << " " << j << " " << wsTotal * i + j << " " << dist[wsTotal * i + j] << " " << objSel[wsTotal * i + j];
-				}*/
+			{
+				//if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0)) {
+				//	printf("u: %d v: %d s: %d t: %d ", u, v, s, t);
+				//	std::cout << i << " " << j << " " << wsTotal * i + j << " " << dist[wsTotal * i + j] << " " << objSel[wsTotal * i + j] << std::endl;
+				//}
 				if (dist[wsTotal * i + j] >= 0)
 				{
 					sumPixel += obj[objSel[wsTotal * i + j]]->color;/*
@@ -398,8 +397,8 @@ void generateTextureCuda(ObjectT** obj) {
 				//else if (u == 256 && v == 128 && s == 0 && t == 0) std::cout << " No hit" << std::endl;
 			}
 			tex.texture.at<cv::Vec<typeT,4>>(countLoop + i) = sumPixel * denom;
-			//tex(u, v, s, t) = sumPixel * denom;
-			//if (u == 256 && v == 128 && s == 0 && t == 0)
+			tex(u, v, s, t) = sumPixel * denom;
+			//if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0))
 			//	std::cout << " Final Color: " << sumPixel * denom << tex(u, v, s, t) << std::endl;
 
 		}
@@ -426,7 +425,9 @@ void generateTextureCuda(ObjectT** obj) {
 			//img.at<cv::Vec4d>(v, u) = tex(u, v, 0, 0);
 			img.at<cv::Vec4d>(v, u) = tex(u, v, TEXS / 2, TEXT / 2);
 	img.convertTo(img, CV_8UC4, 255);
+	cv::imwrite("D:/testeGen.png", img);
 	cv::imshow("Teste", img);
+	cv::imwrite("D:/testeTexGenCuda.png", img);
 	cv::waitKey(0);
 
 	{
@@ -445,15 +446,19 @@ int main()
 	const int wsTotal = ws * ws * ws * ws;
 
 	ObjectT* obj[NUMOBJ];
-	obj[0] = new SphereT(vec3T(1.87, 0, 0), 1, cv::Vec4d(0, 0, 1, 1));
-	obj[1] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec4d(1, 1, 1, 1));
-	//obj[2] = new CylinderT(vec3T(0, 0, 2.62), vec3T(0, 0, 0), 1, 2, cv::Vec4d(1, 0, 1, 1));
-	//obj[3] = new CubeT(vec3T(.68, .71, -1.2), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 0, 1));
+	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec4d(1, 1, 1, 1));
+	obj[1] = new SphereT(vec3T(0, 0, -1.87), 1, cv::Vec4d(0, 0, 1, 1));
+	obj[2] = new CylinderT(vec3T(2.62, 0, 0), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0.941, 0.125, 0.627, 1));
+	obj[3] = new CubeT(vec3T(-1.2, .71, -.68), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 0, 1));
+	obj[4] = new CubeT(vec3T(1.47, -1.05, .93), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 1, 1));
+	obj[5] = new CylinderT(vec3T(-1.07, -.41, 1.81), vec3T(0, 0, 0), 1, 2, cv::Vec4d(1, 0, 0, 1));
+	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0, 0, 0, 1));
 
 	//generateTexture(obj);
 	generateTextureCuda(obj);
 	//generateViewPort(obj);
 	//generateViewPortCuda(obj);
+
 	return 0;
 }
 

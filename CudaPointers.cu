@@ -24,6 +24,12 @@ void CudaPointers<T>::allocate(int totalSize, int usize, int vsize, int ssize, i
 		goto ErrorAllocate;
 	}
 
+	cudaStatus = cudaMalloc((void**)&d_rotation, sizeof(vec3<T>));
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed in d_rotation!\n");
+		goto ErrorAllocate;
+	}
+
 	cudaStatus = cudaMalloc((void**)&d_out, sizeof(T) * totalSize);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed in d_out!\n");
@@ -72,6 +78,7 @@ void CudaPointers<T>::free() {
 	cudaFree(d_rayList);
 	cudaFree(d_out);
 	cudaFree(d_position);
+	cudaFree(d_rotation);
 	cudaFree(d_size);
 }
 

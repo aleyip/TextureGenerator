@@ -57,5 +57,11 @@
     <CudaCompile Include="CudaPointers.cu">
       <Filter>Arquivos de Origem</Filter>
     </CudaCompile>
+    <CudaCompile Include="Cylinder.cu">
+      <Filter>Arquivos de Origem</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Cube.cu">
+      <Filter>Arquivos de Origem</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

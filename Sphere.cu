@@ -22,8 +22,8 @@ __global__ void SphereCollisor_kernel(T* out, const T* rayLight, const T radius,
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < sizeList) {
-        double origin[3] = { rayLight[6 * index] - position[0], rayLight[6 * index + 1] - position[1], rayLight[6 * index + 2] - position[2] };
-        double dir[3] = { rayLight[6 * index + 3], rayLight[6 * index + 4], rayLight[6 * index + 5] };
+        T origin[3] = { rayLight[6 * index] - position[0], rayLight[6 * index + 1] - position[1], rayLight[6 * index + 2] - position[2] };
+        T dir[3] = { rayLight[6 * index + 3], rayLight[6 * index + 4], rayLight[6 * index + 5] };
 
         T a = 1.;
         T b = 2. * (dir[0] * origin[0] + dir[1] * origin[1] + dir[2] * origin[2]);

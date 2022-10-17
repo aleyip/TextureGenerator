@@ -168,7 +168,9 @@
     <None Include="Object.cu" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="Cube.cu" />
     <CudaCompile Include="CudaPointers.cu" />
+    <CudaCompile Include="Cylinder.cu" />
     <CudaCompile Include="Sphere.cu" />
     <CudaCompile Include="Texture4D.cu" />
   </ItemGroup>
