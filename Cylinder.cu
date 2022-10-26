@@ -50,11 +50,11 @@ __global__ void CylinderCollisor_kernel(T* out, T* collision, T* normal, const T
         T vec[3] = { 0,0,0 };
         if (delta >= 0)
         {
-            dist = (-b - sqrt(delta)) / (2. * a);
-            T yCol = relOrigin_ray[1] + dist * newDirection_ray[1];
+            distAux = (-b - sqrt(delta)) / (2. * a);
+            T yCol = relOrigin_ray[1] + distAux * newDirection_ray[1];
 
-            if (yCol <= height / 2. && yCol >= -height / 2.) {
-                distAux = dist;
+            if (yCol <= height && yCol >= -height && distAux < dist) {
+                dist = distAux;
                 vec[0] = relOrigin_ray[0] + dist * newDirection_ray[0];
                 vec[2] = relOrigin_ray[2] + dist * newDirection_ray[2];
                 T mod = vec[0] * vec[0] + vec[2] * vec[2];
@@ -64,10 +64,10 @@ __global__ void CylinderCollisor_kernel(T* out, T* collision, T* normal, const T
             }
         }
         {
-            T yTarget = height / 2.;
-            dist = (yTarget - relOrigin_ray[1]) / newDirection_ray[1];
-            if (dist >= 0 && distAux < dist) {
-                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
+            T yTarget = height;
+            distAux = (yTarget - relOrigin_ray[1]) / newDirection_ray[1];
+            if (distAux >= 0 && distAux < dist) {
+                T xCol = relOrigin_ray[0] + distAux * newDirection_ray[0], zCol = relOrigin_ray[2] + distAux * newDirection_ray[2];
                 if (xCol * xCol + zCol * zCol <= radius * radius) {
                     distAux = dist;
                     vec[0] = 0;
@@ -76,9 +76,9 @@ __global__ void CylinderCollisor_kernel(T* out, T* collision, T* normal, const T
                 }
 
             }
-            dist = (-yTarget - relOrigin_ray[1]) / newDirection_ray[1];
-            if (dist >= 0 && distAux < dist) {
-                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
+            distAux = (-yTarget - relOrigin_ray[1]) / newDirection_ray[1];
+            if (distAux >= 0 && distAux < dist) {
+                T xCol = relOrigin_ray[0] + distAux * newDirection_ray[0], zCol = relOrigin_ray[2] + distAux * newDirection_ray[2];
                 if (xCol * xCol + zCol * zCol <= radius * radius) {
                     distAux = dist;
                     vec[0] = 0;
@@ -104,7 +104,7 @@ __global__ void CylinderCollisor_kernel(T* out, T* collision, T* normal, const T
 }
 
 template <class T>
-cudaError_t CylinderCollisor_wrapper(std::vector<T>& out, const T radius, const T height, const vec3<T> position, const vec3<T> rotation, CudaPointers<T>& cp) {
+cudaError_t CylinderCollisor_wrapper(std::vector<T>& out, const T diameter, const T height, const vec3<T> position, const vec3<T> rotation, CudaPointers<T>& cp) {
     cudaError_t cudaStatus;
 
     cudaStatus = cudaMemcpy(cp.d_position, &position, sizeof(vec3<T>), cudaMemcpyHostToDevice);
@@ -121,15 +121,15 @@ cudaError_t CylinderCollisor_wrapper(std::vector<T>& out, const T radius, const 
 
     // Executing kernel 
     {
-        dim3 threadsPerBlock(1024);
+        dim3 threadsPerBlock(512);
         dim3 blocksPerGrid(ceil(double(out.size()) / double(threadsPerBlock.x)));
-        CylinderCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_collision, cp.d_normal, cp.d_rayList, radius, height, cp.d_position, cp.d_rotation, out.size());
+        CylinderCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_collision, cp.d_normal, cp.d_rayList, diameter/2, height/2, cp.d_position, cp.d_rotation, out.size());
     }
 
     // Check for any errors launching the kernel
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "Sphere Collisor kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        fprintf(stderr, "Cylinder Collisor kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
         goto ErrorCollisor;
     }
 
@@ -137,7 +137,7 @@ cudaError_t CylinderCollisor_wrapper(std::vector<T>& out, const T radius, const 
     // any errors encountered during the launch.
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching Sphere Collisor Kernel!\n", cudaStatus);
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching Cylinder Collisor Kernel!\n", cudaStatus);
         goto ErrorCollisor;
     }
 
@@ -154,9 +154,9 @@ ErrorCollisor:
 
 template <class T>
 void Cylinder<T>::CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp) {
-    cudaError_t cudaStatus = CylinderCollisor_wrapper<T>(out, diameter / 2., height, position, rotation, cp);
+    cudaError_t cudaStatus = CylinderCollisor_wrapper<T>(out, diameter, height, position, rotation, cp);
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "Sphere Collisor Failed\n");
+        fprintf(stderr, "Cylinder Collisor Failed\n");
     }
 }
 
@@ -188,11 +188,11 @@ T Cylinder<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& norm
 
     T delta = -4. * a * c + b * b;
 
-    T dist = -1, distAux = 10e10;
+    T dist = 10e10, distAux = -1;
     if (delta >= 0)
     {
         distAux = (-b - sqrt(delta)) / (2. * a);
-        T yCol = relOrigin.y + dist * newDirection.y;
+        T yCol = relOrigin.y + distAux * newDirection.y;
 
         if (yCol <= height / 2. && yCol >= -height / 2.) {
             dist = distAux;
@@ -203,17 +203,17 @@ T Cylinder<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& norm
     }
     {
         T yTarget = height / 2.;
-        dist = (yTarget - relOrigin.y) / newDirection.y;
+        distAux = (yTarget - relOrigin.y) / newDirection.y;
         if (distAux >= 0 && distAux < dist) {
-            T xCol = relOrigin.x + dist * newDirection.x, zCol = relOrigin.z + dist * newDirection.z;
+            T xCol = relOrigin.x + distAux * newDirection.x, zCol = relOrigin.z + distAux * newDirection.z;
             if (xCol * xCol + zCol * zCol <= radius * radius) {
                 normal = vec3<T>(0, 1, 0);
                 dist = distAux;
             }
         }
-        dist = (-yTarget - relOrigin.y) / newDirection.y;
-        if (dist >= 0) {
-            T xCol = relOrigin.x + dist * newDirection.x, zCol = relOrigin.z + dist * newDirection.z;
+        distAux = (-yTarget - relOrigin.y) / newDirection.y;
+        if (distAux >= 0 && distAux < dist) {
+            T xCol = relOrigin.x + distAux * newDirection.x, zCol = relOrigin.z + distAux * newDirection.z;
             if (xCol * xCol + zCol * zCol <= radius * radius) {
                 normal = vec3<T>(0, -1, 0);
                 dist = distAux;
@@ -231,7 +231,7 @@ T Cylinder<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& norm
         sz * cy * normal.x + (sz * sy * sx + cz * cx) * normal.y + (sz * sy * cx - cz * sx) * normal.z,
         -sy * normal.x + (cy * sx) * normal.y + (cy * cx) * normal.z);
 
-    return -1;
+    return dist;
 }
 
 template class Cylinder<double>;

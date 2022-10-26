@@ -46,10 +46,9 @@ __global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* ra
         T distAux = -1;
         T vec[3] = { 0,0,0 };
         {
-            T xTarget = depth;
-            distAux = (xTarget - relOrigin_ray[0]) / newDirection_ray[0];
-            if (distAux >= 0) {
-                T yCol = relOrigin_ray[1] + dist * newDirection_ray[1], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
+            distAux = (depth - relOrigin_ray[0]) / newDirection_ray[0];
+            if (distAux >= 0 && distAux < dist) {
+                T yCol = relOrigin_ray[1] + distAux * newDirection_ray[1], zCol = relOrigin_ray[2] + distAux * newDirection_ray[2];
                 if (yCol >= -height && yCol <= height &&
                     zCol >= -width && zCol <= width) {
                     dist = distAux;
@@ -57,9 +56,9 @@ __global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* ra
                 }
             }
 
-            distAux = (-xTarget - relOrigin_ray[0]) / newDirection_ray[0];
+            distAux = (-depth - relOrigin_ray[0]) / newDirection_ray[0];
             if (distAux >= 0 && distAux < dist) {
-                T yCol = relOrigin_ray[1] + dist * newDirection_ray[1], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
+                T yCol = relOrigin_ray[1] + distAux * newDirection_ray[1], zCol = relOrigin_ray[2] + distAux * newDirection_ray[2];
                 if (yCol >= -height && yCol <= height &&
                     zCol >= -width && zCol <= width) {
                     dist = distAux;
@@ -68,10 +67,9 @@ __global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* ra
             }
         }
         {
-            T yTarget = height;
-            distAux = (yTarget - relOrigin_ray[1]) / newDirection_ray[1];
+            distAux = (height - relOrigin_ray[1]) / newDirection_ray[1];
             if (distAux >= 0 && distAux < dist) {
-                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
+                T xCol = relOrigin_ray[0] + distAux * newDirection_ray[0], zCol = relOrigin_ray[2] + distAux * newDirection_ray[2];
                 if (xCol >= -depth && xCol <= depth &&
                     zCol >= -width && zCol <= width) {
                     dist = distAux;
@@ -80,9 +78,9 @@ __global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* ra
                 }
             }
 
-            distAux = (-yTarget - relOrigin_ray[1]) / newDirection_ray[1];
+            distAux = (-height - relOrigin_ray[1]) / newDirection_ray[1];
             if (distAux >= 0 && distAux < dist) {
-                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
+                T xCol = relOrigin_ray[0] + distAux * newDirection_ray[0], zCol = relOrigin_ray[2] + distAux * newDirection_ray[2];
                 if (xCol >= -depth && xCol <= depth &&
                     zCol >= -width && zCol <= width) {
                     dist = distAux;
@@ -92,10 +90,9 @@ __global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* ra
             }
         }
         {
-            T zTarget = width;
-            distAux = (zTarget - relOrigin_ray[2]) / newDirection_ray[2];
+            distAux = (width - relOrigin_ray[2]) / newDirection_ray[2];
             if (distAux >= 0 && distAux < dist) {
-                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], yCol = relOrigin_ray[1] + dist * newDirection_ray[1];
+                T xCol = relOrigin_ray[0] + distAux * newDirection_ray[0], yCol = relOrigin_ray[1] + distAux * newDirection_ray[1];
                 if (xCol >= -depth && xCol <= depth &&
                     yCol >= -height && yCol <= height) {
                     dist = distAux;
@@ -105,9 +102,9 @@ __global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* ra
                 }
             }
 
-            distAux = (-zTarget - relOrigin_ray[2]) / newDirection_ray[2];
+            distAux = (-width - relOrigin_ray[2]) / newDirection_ray[2];
             if (distAux >= 0 && distAux < dist) {
-                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], yCol = relOrigin_ray[1] + dist * newDirection_ray[1];
+                T xCol = relOrigin_ray[0] + distAux * newDirection_ray[0], yCol = relOrigin_ray[1] + distAux * newDirection_ray[1];
                 if (xCol >= -depth && xCol <= depth &&
                     yCol >= -height && yCol <= height) {
                     dist = distAux;
@@ -150,7 +147,7 @@ cudaError_t CubeCollisor_wrapper(std::vector<T>& out, const T width, const T hei
 
     // Executing kernel 
     {
-        dim3 threadsPerBlock(1024);
+        dim3 threadsPerBlock(512);
         dim3 blocksPerGrid(ceil(double(out.size()) / double(threadsPerBlock.x)));
         CubeCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_collision, cp.d_normal, cp.d_rayList, width / 2, height / 2, depth / 2, cp.d_position, cp.d_rotation, out.size());
     }
@@ -158,7 +155,7 @@ cudaError_t CubeCollisor_wrapper(std::vector<T>& out, const T width, const T hei
     // Check for any errors launching the kernel
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "Sphere Collisor kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        fprintf(stderr, "Cube Collisor kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
         goto ErrorCollisor;
     }
 
@@ -166,7 +163,7 @@ cudaError_t CubeCollisor_wrapper(std::vector<T>& out, const T width, const T hei
     // any errors encountered during the launch.
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching Sphere Collisor Kernel!\n", cudaStatus);
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching Cube Collisor Kernel!\n", cudaStatus);
         goto ErrorCollisor;
     }
 
@@ -185,7 +182,7 @@ template <class T>
 void Cube<T>::CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp) {
     cudaError_t cudaStatus = CubeCollisor_wrapper<T>(out, width, height, depth, position, rotation, cp);
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "Sphere Collisor Failed\n");
+        fprintf(stderr, "Cube Collisor Failed\n");
     }
 }
 
@@ -215,8 +212,8 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
     {
         T xTarget = depth / 2.;
         distAux = (xTarget - relOrigin.x) / newDirection.x;
-        if (distAux >= 0) {
-            T yCol = relOrigin.y + dist * newDirection.y, zCol = relOrigin.z + dist * newDirection.z;
+        if (distAux >= 0 && distAux < dist) {
+            T yCol = relOrigin.y + distAux * newDirection.y, zCol = relOrigin.z + distAux * newDirection.z;
             if (yCol >= -height / 2 && yCol <= height / 2 &&
                 zCol >= -width / 2 && zCol <= width / 2) {
                 dist = distAux;
@@ -224,9 +221,9 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
             }
         }
 
-        dist = (-xTarget - relOrigin.x) / newDirection.x;
-        if (dist >= 0 && dist < distAux) {
-            T yCol = relOrigin.y + dist * newDirection.y, zCol = relOrigin.z + dist * newDirection.z;
+        distAux = (-xTarget - relOrigin.x) / newDirection.x;
+        if (distAux >= 0 && distAux < dist) {
+            T yCol = relOrigin.y + distAux * newDirection.y, zCol = relOrigin.z + distAux * newDirection.z;
             if (yCol >= -height / 2 && yCol <= height / 2 &&
                 zCol >= -width / 2 && zCol <= width / 2) {
                 dist = distAux;
@@ -236,9 +233,9 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
     }
     {
         T yTarget = height / 2.;
-        dist = (yTarget - relOrigin.y) / newDirection.y;
-        if (dist >= 0 && dist < distAux) {
-            T xCol = relOrigin.x + dist * newDirection.x, zCol = relOrigin.z + dist * newDirection.z;
+        distAux = (yTarget - relOrigin.y) / newDirection.y;
+        if (distAux >= 0 && distAux < dist) {
+            T xCol = relOrigin.x + distAux * newDirection.x, zCol = relOrigin.z + distAux * newDirection.z;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
                 zCol >= -width / 2 && zCol <= width / 2) {
                 dist = distAux;
@@ -246,9 +243,9 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
             }
         }
 
-        dist = (-yTarget - relOrigin.y) / newDirection.y;
-        if (dist >= 0 && dist < distAux) {
-            T xCol = relOrigin.x + dist * newDirection.x, zCol = relOrigin.z + dist * newDirection.z;
+        distAux = (-yTarget - relOrigin.y) / newDirection.y;
+        if (distAux >= 0 && distAux < dist) {
+            T xCol = relOrigin.x + distAux * newDirection.x, zCol = relOrigin.z + distAux * newDirection.z;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
                 zCol >= -width / 2 && zCol <= width / 2) {
                 dist = distAux;
@@ -258,9 +255,9 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
     }
     {
         T zTarget = width / 2.;
-        dist = (zTarget - relOrigin.z) / newDirection.z;
-        if (dist >= 0 && dist < distAux) {
-            T xCol = relOrigin.x + dist * newDirection.x, yCol = relOrigin.y + dist * newDirection.y;
+        distAux = (zTarget - relOrigin.z) / newDirection.z;
+        if (distAux >= 0 && distAux < dist) {
+            T xCol = relOrigin.x + distAux * newDirection.x, yCol = relOrigin.y + distAux * newDirection.y;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
                 yCol >= -height / 2 && yCol <= height / 2) {
                 dist = distAux;
@@ -268,9 +265,9 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
             }
         }
 
-        dist = (-zTarget - relOrigin.z) / newDirection.z;
-        if (dist >= 0 && dist < distAux) {
-            T xCol = relOrigin.x + dist * newDirection.x, yCol = relOrigin.y + dist * newDirection.y;
+        distAux = (-zTarget - relOrigin.z) / newDirection.z;
+        if (distAux >= 0 && distAux < dist) {
+            T xCol = relOrigin.x + distAux * newDirection.x, yCol = relOrigin.y + distAux * newDirection.y;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
                 yCol >= -height / 2 && yCol <= height / 2) {
                 dist = distAux;

@@ -41,34 +41,31 @@ using Texture4DT = Texture4D<typeT>;
 using vec3T = vec3<typeT>;
 using CudaPointersT = CudaPointers<typeT>;
 
-void generateViewPort(ObjectT** obj) {
+void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
 	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
-	typeT fov = 90;
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
-	vec3T viewPos = vec3T(-12, 0, 0);
-	vec3T viewDir = vec3T(1, 0, 0);
 
-	viewDir.normalize();
-	vec3T right = vec3(-viewDir.z, 0., viewDir.x);
+	viewerDir.normalize();
+	vec3T right = vec3(-viewerDir.z, 0., viewerDir.x);
 	right.normalize();
-	vec3T up = vec3(-right.z * viewDir.y, right.z * viewDir.x - right.x * viewDir.z, right.x * viewDir.y);
+	vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
 	up.normalize();
 
-	printf("%f, %f, %f\n", viewDir.x, viewDir.y, viewDir.z);
-	printf("%f, %f, %f\n", viewPos.x, viewPos.y, viewPos.z);
-	img.forEach<cv::Vec<typeT, 4>>([&obj, &viewPos, &viewDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
+	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
+	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
+	img.forEach<cv::Vec<typeT, 4>>([&obj, &viewerPos, &viewerDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
 		typeT dV = ((1.0 - 2.0 * pos[0] / typeT(img.rows - 1)) * halfHeight);
 		typeT dH = ((1.0 - 2.0 * pos[1] / typeT(img.cols - 1)) * halfHeight);
 
 		vec3T vDaux = vec3T(1, dV, dH);
 		vDaux.normalize();
 		vec3T vD = vec3T(
-			viewDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
-			viewDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
-			viewDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
+			viewerDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
+			viewerDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
+			viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
 		);
 
-		RayLightT ray = RayLightT(viewPos, vD);
+		RayLightT ray = RayLightT(viewerPos, vD);
 		vec3T normal, collision;
 		ObjectT* colObj[1];
 		typeT dist = -1;
@@ -93,21 +90,18 @@ void generateViewPort(ObjectT** obj) {
 	cv::waitKey(0);
 }
 
-void generateViewPortCuda(ObjectT** obj) {
+void generateViewPortCuda(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
 	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
-	typeT fov = 90;
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
-	vec3T viewPos = vec3T(-12, 0, 0);
-	vec3T viewDir = vec3T(1, 0, 0);
 
-	viewDir.normalize();
-	vec3T right = vec3(-viewDir.z, 0., viewDir.x);
+	viewerDir.normalize();
+	vec3T right = vec3(-viewerDir.z, 0., viewerDir.x);
 	right.normalize();
-	vec3T up = vec3(-right.z * viewDir.y, right.z * viewDir.x - right.x * viewDir.z, right.x * viewDir.y);
+	vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
 	up.normalize();
 
-	printf("%f, %f, %f\n", viewDir.x, viewDir.y, viewDir.z);
-	printf("%f, %f, %f\n", viewPos.x, viewPos.y, viewPos.z);
+	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
+	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
 
 	CudaPointersT cp;
 	cp.allocate(img.total(), 0, 0, 0, 0);
@@ -122,9 +116,9 @@ void generateViewPortCuda(ObjectT** obj) {
 			vec3T vDaux = vec3T(1, dV, dH);
 			vDaux.normalize();
 			vec3T vD = vec3T(
-				viewDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
-				viewDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
-				viewDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
+				viewerDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
+				viewerDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
+				viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
 			);
 
 			//if ((r == 1024 || r == 0) && c == 1024) {
@@ -132,7 +126,7 @@ void generateViewPortCuda(ObjectT** obj) {
 			//	printf("b %d %d %f, %f, %f\n", r, c, vD.x, vD.y, vD.z);
 			//}
 
-			rayList[img.rows * c + r] = RayLightT(viewPos, vD);
+			rayList[img.rows * c + r] = RayLightT(viewerPos, vD);
 		}
 
 	std::vector<typeT>distList = std::vector<typeT>(img.total(), -1);
@@ -440,8 +434,8 @@ int main()
 
 	//generateTexture(obj);
 	//generateTextureCuda(obj);
-	generateViewPort(obj);
-	generateViewPortCuda(obj);
+	generateViewPort(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
+	generateViewPortCuda(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
 
 	return 0;
 }
