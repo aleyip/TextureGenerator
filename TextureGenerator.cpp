@@ -69,11 +69,12 @@ void generateViewPort(ObjectT** obj) {
 		);
 
 		RayLightT ray = RayLightT(viewPos, vD);
+		vec3T normal, collision;
 		ObjectT* colObj[1];
 		typeT dist = -1;
 		for (int i = 0; i < NUMOBJ; i++)
 		{
-			typeT d = obj[i]->CheckCollision(ray);;
+			typeT d = obj[i]->CheckCollision(ray, collision, normal);
 			//typeT d = obj[i]->CheckCollision(ray);
 			if ((d < dist && d >= 0) || dist == -1) {
 				dist = d;
@@ -234,6 +235,7 @@ void generateTexture(ObjectT** obj) {
 									);
 									vD = vD * (-1);
 									RayLightT ray = RayLightT(pos, vD);
+									vec3T collision, normal;
 
 									//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
 
@@ -241,7 +243,7 @@ void generateTexture(ObjectT** obj) {
 									double dist = -1;
 									for (int i = 0; i < NUMOBJ; i++)
 									{
-										double d = obj[i]->CheckCollision(ray);
+										double d = obj[i]->CheckCollision(ray, collision, normal);
 										if ((d < dist && d >= 0) || dist == -1) {
 											dist = d;
 											color = obj[i]->color;
@@ -352,26 +354,8 @@ void generateTextureCuda(ObjectT** obj) {
 					dist[i] = d[i];
 					objSel[i] = o;
 				}
-
-			//std::cout << "Size d:" << d.size() << std::endl;
-			//for (int i = 0; i < d.size(); i++) {
-			//	int index = countLoop + i / wsTotal;
-			//	int u = (index) / (size[3] * size[2] * size[1]);
-			//	int v = ((index / size[3]) / size[2]) % size[1];
-			//	int s = (index / size[3]) % size[2];
-			//	int t = index % size[3];
-			//	if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0)) {
-			//		printf("u: %d v : %d s: %d t: %d ", u, v, s, t);
-			//		printf("dist %d: %f %f %d\n", o, d[i], dist[i], objSel[i]);
-			//	}
-			//}
 		}
-		//auto end1 = std::chrono::steady_clock::now();
-		//std::cout << "Collisor Elapsed time in milliseconds: "
-		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1).count()
-		//	<< " ms" << std::endl;
 
-		//auto start2 = std::chrono::steady_clock::now();
 #pragma omp parallel for
 		for (int i = 0; i < length; i++)
 		{
@@ -455,9 +439,9 @@ int main()
 	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0, 0, 0, 1));
 
 	//generateTexture(obj);
-	generateTextureCuda(obj);
-	//generateViewPort(obj);
-	//generateViewPortCuda(obj);
+	//generateTextureCuda(obj);
+	generateViewPort(obj);
+	generateViewPortCuda(obj);
 
 	return 0;
 }

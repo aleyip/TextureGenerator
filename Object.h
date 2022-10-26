@@ -27,7 +27,7 @@ public:
 	Object(vec3<T> position, vec3<T> rotation, cv::Vec<T,4> color) : position(position), rotation(rotation), color(color) {};
 	virtual ~Object() = default;
 
-	virtual T CheckCollision(RayLight<T> ray);
+	virtual T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
 	virtual void CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp);
 };
 

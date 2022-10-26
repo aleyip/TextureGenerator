@@ -6,6 +6,7 @@ template <class T>
 struct vec3 {
 	T x, y, z;
 
+	vec3() : x(0), y(0), z(0) {};
 	vec3(T x, T y, T z) : x(x), y(y), z(z) {};
 
 	void normalize() {
@@ -17,20 +18,26 @@ struct vec3 {
 		z *= norm;
 	}
 
-	inline vec3 add(T x2, T y2, T z2) {
-		return vec3(x + x2, y + y2, z + z2);
+	inline vec3<T> add(T x2, T y2, T z2) {
+		return vec3<T>(x + x2, y + y2, z + z2);
 	}
 
-	inline vec3 operator+(vec3 n) {
-		return vec3(x + n.x, y + n.y, z + n.z);
+	inline vec3<T> operator+(const vec3<T>& n) {
+		return vec3<T>(x + n.x, y + n.y, z + n.z);
 	}
 
-	inline vec3 operator-(vec3 n) {
-		return vec3(x - n.x, y - n.y, z - n.z);
+	inline vec3<T> operator-(const vec3<T>& n) {
+		return vec3<T>(x - n.x, y - n.y, z - n.z);
 	}
 
-	inline vec3 operator*(T value) {
-		return vec3(value * x, value * y, value * z);
+	inline vec3<T> operator*(const T& value) {
+		return vec3<T>(value * x, value * y, value * z);
+	}
+
+	inline void operator=(const vec3<T>& value) {
+		x = value.x;
+		y = value.y;
+		z = value.z;
 	}
 
 	inline T dot(vec3<T> v) {

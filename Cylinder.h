@@ -12,6 +12,6 @@ public:
 	Cylinder(vec3<T> origin, vec3<T> rotation, T diameter, T height, cv::Vec<T,4> color) : diameter(diameter), height(height), Object<T>(origin, rotation, color) {};
 	~Cylinder() = default;
 
-	T CheckCollision(RayLight<T> ray);
+	T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
 	void CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp);
 };

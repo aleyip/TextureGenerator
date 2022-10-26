@@ -18,6 +18,18 @@ void CudaPointers<T>::allocate(int totalSize, int usize, int vsize, int ssize, i
 		goto ErrorAllocate;
 	}
 
+	cudaStatus = cudaMalloc((void**)&d_collision, sizeof(vec3<T>) * totalSize);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed in d_collision!\n");
+		goto ErrorAllocate;
+	}
+
+	cudaStatus = cudaMalloc((void**)&d_normal, sizeof(vec3<T>) * totalSize);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed in d_collision!\n");
+		goto ErrorAllocate;
+	}
+
 	cudaStatus = cudaMalloc((void**)&d_position, sizeof(vec3<T>));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed in d_position!\n");
@@ -76,6 +88,8 @@ void CudaPointers<T>::downloadRayList(std::vector<RayLight<T>>& rayList) {
 template<class T>
 void CudaPointers<T>::free() {
 	cudaFree(d_rayList);
+	cudaFree(d_collision);
+	cudaFree(d_normal);
 	cudaFree(d_out);
 	cudaFree(d_position);
 	cudaFree(d_rotation);

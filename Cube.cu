@@ -18,104 +18,117 @@ __device__ inline void atomicAdd(double* address, double value) {
 
 //Vetor dir deve estar normalizado!!!!
 template<class T>
-__global__ void CubeCollisor_kernel(T* out, const T* rayLight, const T width, const T height, const T depth, const T* position, const T* rotation, const int sizeList) {
+__global__ void CubeCollisor_kernel(T* out, T* collision, T* normal, const T* rayLight, const T width, const T height, const T depth, const T* position, const T* rotation, const int sizeList) {
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < sizeList) {
-        T origin[3] = { rayLight[6 * index], rayLight[6 * index + 1], rayLight[6 * index + 2] };
-        T direction[3] = { rayLight[6 * index + 3], rayLight[6 * index + 4], rayLight[6 * index + 5] };
+        T origin_ray[3] = { rayLight[6 * index], rayLight[6 * index + 1], rayLight[6 * index + 2] };
+        T direction_ray[3] = { rayLight[6 * index + 3], rayLight[6 * index + 4], rayLight[6 * index + 5] };
 
         //T dirD[] = { rotation[0] * degToRad,rotation[1] * degToRad,rotation[2] * degToRad };
-        T dirD[] = { rotation[0] * degToRad,rotation[1] * degToRad,rotation[2] * degToRad };
+        T rotRad[] = { rotation[0] * degToRad,rotation[1] * degToRad,rotation[2] * degToRad };
 
-        T cx = cos(dirD[0]), sx = sin(dirD[0]), cy = cos(dirD[1]), sy = sin(dirD[1]), cz = cos(dirD[2]), sz = sin(dirD[2]);
+        T cx = cos(rotRad[0]), sx = sin(rotRad[0]), cy = cos(rotRad[1]), sy = sin(rotRad[1]), cz = cos(rotRad[2]), sz = sin(rotRad[2]);
 
-        T newOrigin[] = {
-            cz * cy * origin[0] + sz * cy * origin[1] - sy * origin[2],
-            (cz * sy * sx - sz * cx) * origin[0] + (sz * sy * sx + cz * cx) * origin[1] + (cy * sx) * origin[2],
-            (cz * sy * cx + sz * sx) * origin[0] + (sz * sy * cx - cz * sx) * origin[1] + (cy * cx) * origin[2] };
+        T newOrigin_ray[] = {
+            cz * cy * origin_ray[0] + sz * cy * origin_ray[1] - sy * origin_ray[2],
+            (cz * sy * sx - sz * cx) * origin_ray[0] + (sz * sy * sx + cz * cx) * origin_ray[1] + (cy * sx) * origin_ray[2],
+            (cz * sy * cx + sz * sx) * origin_ray[0] + (sz * sy * cx - cz * sx) * origin_ray[1] + (cy * cx) * origin_ray[2] };
 
-        T newDirection[] = {
-            cz * cy * direction[0] + sz * cy * direction[1] - sy * direction[2],
-            (cz * sy * sx - sz * cx) * direction[0] + (sz * sy * sx + cz * cx) * direction[1] + (cy * sx) * direction[2],
-            (cz * sy * cx + sz * sx) * direction[0] + (sz * sy * cx - cz * sx) * direction[1] + (cy * cx) * direction[2] };
+        T newDirection_ray[] = {
+            cz * cy * direction_ray[0] + sz * cy * direction_ray[1] - sy * direction_ray[2],
+            (cz * sy * sx - sz * cx) * direction_ray[0] + (sz * sy * sx + cz * cx) * direction_ray[1] + (cy * sx) * direction_ray[2],
+            (cz * sy * cx + sz * sx) * direction_ray[0] + (sz * sy * cx - cz * sx) * direction_ray[1] + (cy * cx) * direction_ray[2] };
 
-        T relOrigin[] = { newOrigin[0] - position[0],newOrigin[1] - position[1],newOrigin[2] - position[2] };
+        T relOrigin_ray[] = { newOrigin_ray[0] - position[0],newOrigin_ray[1] - position[1],newOrigin_ray[2] - position[2] };
 
-        T dist = -1;
+        T dist = 10e10;
+        T distAux = -1;
+        T vec[3] = { 0,0,0 };
         {
             T xTarget = depth;
-            dist = (xTarget - relOrigin[0]) / newDirection[0];
-            if (dist >= 0) {
-                T yCol = relOrigin[1] + dist * newDirection[1], zCol = relOrigin[2] + dist * newDirection[2];
+            distAux = (xTarget - relOrigin_ray[0]) / newDirection_ray[0];
+            if (distAux >= 0) {
+                T yCol = relOrigin_ray[1] + dist * newDirection_ray[1], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
                 if (yCol >= -height && yCol <= height &&
                     zCol >= -width && zCol <= width) {
-                    out[index] = dist;
-                    return;
+                    dist = distAux;
+                    vec[0] = 1;
                 }
             }
-        }
-        {
-            T xTarget = depth;
-            dist = (-xTarget - relOrigin[0]) / newDirection[0];
-            if (dist >= 0) {
-                T yCol = relOrigin[1] + dist * newDirection[1], zCol = relOrigin[2] + dist * newDirection[2];
+
+            distAux = (-xTarget - relOrigin_ray[0]) / newDirection_ray[0];
+            if (distAux >= 0 && distAux < dist) {
+                T yCol = relOrigin_ray[1] + dist * newDirection_ray[1], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
                 if (yCol >= -height && yCol <= height &&
                     zCol >= -width && zCol <= width) {
-                    out[index] = dist;
-                    return;
+                    dist = distAux;
+                    vec[0] = -1;
                 }
             }
         }
         {
             T yTarget = height;
-            dist = (yTarget - relOrigin[1]) / newDirection[1];
-            if (dist >= 0) {
-                T xCol = relOrigin[0] + dist * newDirection[0], zCol = relOrigin[2] + dist * newDirection[2];
+            distAux = (yTarget - relOrigin_ray[1]) / newDirection_ray[1];
+            if (distAux >= 0 && distAux < dist) {
+                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
                 if (xCol >= -depth && xCol <= depth &&
                     zCol >= -width && zCol <= width) {
-                    out[index] = dist;
-                    return;
+                    dist = distAux;
+                    vec[0] = 0;
+                    vec[1] = 1;
                 }
             }
-        }
-        {
-            T yTarget = height;
-            dist = (-yTarget - relOrigin[1]) / newDirection[1];
-            if (dist >= 0) {
-                T xCol = relOrigin[0] + dist * newDirection[0], zCol = relOrigin[2] + dist * newDirection[2];
+
+            distAux = (-yTarget - relOrigin_ray[1]) / newDirection_ray[1];
+            if (distAux >= 0 && distAux < dist) {
+                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], zCol = relOrigin_ray[2] + dist * newDirection_ray[2];
                 if (xCol >= -depth && xCol <= depth &&
                     zCol >= -width && zCol <= width) {
-                    out[index] = dist;
-                    return;
+                    dist = distAux;
+                    vec[0] = 0;
+                    vec[1] = -1;
                 }
             }
         }
         {
             T zTarget = width;
-            dist = (zTarget - relOrigin[2]) / newDirection[2];
-            if (dist >= 0) {
-                T xCol = relOrigin[0] + dist * newDirection[0], yCol = relOrigin[1] + dist * newDirection[1];
+            distAux = (zTarget - relOrigin_ray[2]) / newDirection_ray[2];
+            if (distAux >= 0 && distAux < dist) {
+                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], yCol = relOrigin_ray[1] + dist * newDirection_ray[1];
                 if (xCol >= -depth && xCol <= depth &&
                     yCol >= -height && yCol <= height) {
-                    out[index] = dist;
-                    return;
+                    dist = distAux;
+                    vec[0] = 0;
+                    vec[1] = 0;
+                    vec[2] = 1;
+                }
+            }
+
+            distAux = (-zTarget - relOrigin_ray[2]) / newDirection_ray[2];
+            if (distAux >= 0 && distAux < dist) {
+                T xCol = relOrigin_ray[0] + dist * newDirection_ray[0], yCol = relOrigin_ray[1] + dist * newDirection_ray[1];
+                if (xCol >= -depth && xCol <= depth &&
+                    yCol >= -height && yCol <= height) {
+                    dist = distAux;
+                    vec[0] = 0;
+                    vec[1] = 0;
+                    vec[2] = -1;
                 }
             }
         }
-        {
-            T zTarget = width;
-            dist = (-zTarget - relOrigin[2]) / newDirection[2];
-            if (dist >= 0) {
-                T xCol = relOrigin[0] + dist * newDirection[0], yCol = relOrigin[1] + dist * newDirection[1];
-                if (xCol >= -depth && xCol <= depth &&
-                    yCol >= -height && yCol <= height) {
-                    out[index] = dist;
-                    return;
-                }
-            }
+        if (dist == 10e10) {
+            out[index] = -1;
+            return;
         }
-        out[index] = -1;
+
+        out[index] = dist;
+        normal[3 * index] = cz * cy * vec[0] + (cz * sy * sx - sz * cx) * vec[1] + (cz * sy * cx + sz * sx) * vec[2];
+        normal[3 * index + 1] = sz * cy * vec[0] + (sz * sy * sx + cz * cx) * vec[1] + (sz * sy * cx - cz * sx) * vec[2];
+        normal[3 * index + 2] = -sy * vec[0] + (cy * sx) * vec[1] + (cy * cx) * vec[2];
+        collision[3 * index] = origin_ray[0] + dist * direction_ray[0];
+        collision[3 * index + 1] = origin_ray[1] + dist * direction_ray[1];
+        collision[3 * index + 2] = origin_ray[2] + dist * direction_ray[2];
     }
 }
 
@@ -139,7 +152,7 @@ cudaError_t CubeCollisor_wrapper(std::vector<T>& out, const T width, const T hei
     {
         dim3 threadsPerBlock(1024);
         dim3 blocksPerGrid(ceil(double(out.size()) / double(threadsPerBlock.x)));
-        CubeCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_rayList, width / 2, height / 2, depth / 2, cp.d_position, cp.d_rotation, out.size());
+        CubeCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_collision, cp.d_normal, cp.d_rayList, width / 2, height / 2, depth / 2, cp.d_position, cp.d_rotation, out.size());
     }
 
     // Check for any errors launching the kernel
@@ -177,14 +190,10 @@ void Cube<T>::CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp) {
 }
 
 template <class T>
-T Cube<T>::CheckCollision(RayLight<T> ray) {
-    T mod = ray.direction.dot(ray.direction);
-    if (mod != 1.) {
-        mod = sqrt(mod);
-        ray.direction = ray.direction * (1. / mod);
-    }
+T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) {
+    ray.direction.normalize();
 
-    vec3<T> dirD = this->rotation * degToRad;
+    vec3<T> dirD = rotation * degToRad;
 
     T cx = cos(dirD.x), sx = sin(dirD.x), cy = cos(dirD.y), sy = sin(dirD.y), cz = cos(dirD.z), sz = sin(dirD.z);
 
@@ -200,68 +209,87 @@ T Cube<T>::CheckCollision(RayLight<T> ray) {
 
     vec3<T>  relOrigin = newOrigin - this->position;
 
-    T dist = -1;
+    T dist = 10e10;
+    T distAux = -1;
+    normal = vec3<T>(0, 0, 0);
     {
         T xTarget = depth / 2.;
-        dist = (xTarget - relOrigin.x) / newDirection.x;
-        if (dist >= 0) {
+        distAux = (xTarget - relOrigin.x) / newDirection.x;
+        if (distAux >= 0) {
             T yCol = relOrigin.y + dist * newDirection.y, zCol = relOrigin.z + dist * newDirection.z;
             if (yCol >= -height / 2 && yCol <= height / 2 &&
-                zCol >= -width / 2 && zCol <= width / 2)
-                return dist;
+                zCol >= -width / 2 && zCol <= width / 2) {
+                dist = distAux;
+                normal = vec3<T>(1,0,0);
+            }
         }
-    }
-    {
-        T xTarget = depth / 2.;
+
         dist = (-xTarget - relOrigin.x) / newDirection.x;
-        if (dist >= 0) {
+        if (dist >= 0 && dist < distAux) {
             T yCol = relOrigin.y + dist * newDirection.y, zCol = relOrigin.z + dist * newDirection.z;
             if (yCol >= -height / 2 && yCol <= height / 2 &&
-                zCol >= -width / 2 && zCol <= width / 2)
-                return dist;
+                zCol >= -width / 2 && zCol <= width / 2) {
+                dist = distAux;
+                normal = vec3<T>(-1, 0, 0);
+            }
         }
     }
     {
         T yTarget = height / 2.;
         dist = (yTarget - relOrigin.y) / newDirection.y;
-        if (dist >= 0) {
+        if (dist >= 0 && dist < distAux) {
             T xCol = relOrigin.x + dist * newDirection.x, zCol = relOrigin.z + dist * newDirection.z;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
-                zCol >= -width / 2 && zCol <= width / 2)
-                return dist;
+                zCol >= -width / 2 && zCol <= width / 2) {
+                dist = distAux;
+                normal = vec3<T>(0, 1, 0);
+            }
         }
-    }
-    {
-        T yTarget = height / 2.;
+
         dist = (-yTarget - relOrigin.y) / newDirection.y;
-        if (dist >= 0) {
+        if (dist >= 0 && dist < distAux) {
             T xCol = relOrigin.x + dist * newDirection.x, zCol = relOrigin.z + dist * newDirection.z;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
-                zCol >= -width / 2 && zCol <= width / 2)
-                return dist;
+                zCol >= -width / 2 && zCol <= width / 2) {
+                dist = distAux;
+                normal = vec3<T>(0, -1, 0);
+            }
         }
     }
     {
         T zTarget = width / 2.;
         dist = (zTarget - relOrigin.z) / newDirection.z;
-        if (dist >= 0) {
+        if (dist >= 0 && dist < distAux) {
             T xCol = relOrigin.x + dist * newDirection.x, yCol = relOrigin.y + dist * newDirection.y;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
-                yCol >= -height / 2 && yCol <= height / 2)
-                return dist;
+                yCol >= -height / 2 && yCol <= height / 2) {
+                dist = distAux;
+                normal = vec3<T>(0, 0, 1);
+            }
         }
-    }
-    {
-        T zTarget = width / 2.;
+
         dist = (-zTarget - relOrigin.z) / newDirection.z;
-        if (dist >= 0) {
+        if (dist >= 0 && dist < distAux) {
             T xCol = relOrigin.x + dist * newDirection.x, yCol = relOrigin.y + dist * newDirection.y;
             if (xCol >= -depth / 2 && xCol <= depth / 2 &&
-                yCol >= -height / 2 && yCol <= height / 2)
-                return dist;
+                yCol >= -height / 2 && yCol <= height / 2) {
+                dist = distAux;
+                normal = vec3<T>(0, -1, -1);
+            }
         }
+    }       
+
+    if (dist == 10e10) {
+        return -1;
     }
-    return  -1;
+
+    collision = ray.origin + ray.direction * dist;
+    normal = vec3<T>(
+        cz * cy * normal.x + (cz * sy * sx - sz * cx) * normal.y + (cz * sy * cx + sz * sx) * normal.z,
+        sz * cy * normal.x + (sz * sy * sx + cz * cx) * normal.y + (sz * sy * cx - cz * sx) * normal.z,
+        -sy * normal.x + (cy * sx) * normal.y + (cy * cx) * normal.z);
+
+    return dist;
 }
 
 template class Cube<double>;
