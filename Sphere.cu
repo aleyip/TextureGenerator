@@ -1,4 +1,5 @@
 #include "Sphere.h"
+#include "defines.h"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -18,49 +19,62 @@ __device__ inline void atomicAdd(double* address, double value) {
 
 //Vetor dir deve estar normalizado!!!!
 template<class T>
-__global__ void SphereCollisor_kernel(T* out, T* collision, T* normal, const T* rayLight, const T radius, const T* position, const int sizeList) {
+__global__ void SphereCollisor_kernel(T* out, T* collision, T* normal, int8_t* objHit, const T* rayLight, 
+    const T radius, const T* position, const int sizeList, const int objIndex) {
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < sizeList) {
-        T origin[3] = { rayLight[6 * index] - position[0], rayLight[6 * index + 1] - position[1], rayLight[6 * index + 2] - position[2] };
+        T origin[3] = { rayLight[6 * index], rayLight[6 * index + 1], rayLight[6 * index + 2] };
         T dir[3] = { rayLight[6 * index + 3], rayLight[6 * index + 4], rayLight[6 * index + 5] };
 
-        T a = 1.;
-        T b = 2. * (dir[0] * origin[0] + dir[1] * origin[1] + dir[2] * origin[2]);
-        T c = origin[0] * origin[0] + origin[1] * origin[1] + origin[2] * origin[2] - radius * radius;
+        T vec[3] = { origin[0] - position[0], origin[1] - position[1], origin[2] - position[2] };
 
-        T delta = -4. * a * c + b * b;
-        if (delta < 0.) {
-            out[index] = -1;
-            return;
+        T dist;
+        {
+            T a = 1.;
+            T b = 2. * (dir[0] * vec[0] + dir[1] * vec[1] + dir[2] * vec[2]);
+            T c = vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2] - radius * radius;
+
+            T delta = -4. * a * c + b * b;
+            if (delta < 0.) {
+                return;
+            }
+            dist = (-b - sqrt(delta)) / (2. * a);
         }
 
-        T vec[3];
-        vec[0] = origin[0] + delta * dir[0];
-        vec[1] = origin[1] + delta * dir[1];
-        vec[2] = origin[2] + delta * dir[2];
+        if (dist < out[index]) {
+            T vec[3];
+            vec[0] = origin[0] + dist * dir[0];
+            vec[1] = origin[1] + dist * dir[1];
+            vec[2] = origin[2] + dist * dir[2];
 
-        collision[3 * index] = vec[0];
-        collision[3 * index + 1] = vec[1];
-        collision[3 * index + 2] = vec[2];
+            collision[3 * index] = vec[0];
+            collision[3 * index + 1] = vec[1];
+            collision[3 * index + 2] = vec[2];
 
-        vec[0] = collision[0] - position[0];
-        vec[1] = collision[1] - position[1];
-        vec[2] = collision[2] - position[2];
+            vec[0] = vec[0] - position[0];
+            vec[1] = vec[1] - position[1];
+            vec[2] = vec[2] - position[2];
 
-        T mod = vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2];
-        mod = 1./sqrt(mod);
+            T mod = vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2];
+            mod = 1. / sqrt(mod);
 
-        normal[3 * index] = vec[0] * mod;
-        normal[3 * index + 1] = vec[1] * mod;
-        normal[3 * index + 2] = vec[2] * mod;
+            vec[0] *= mod;
+            vec[1] *= mod;
+            vec[2] *= mod;
 
-        out[index] = (-b - sqrt(delta)) / (2. * a);
+            normal[3 * index] = vec[0];
+            normal[3 * index + 1] = vec[1];
+            normal[3 * index + 2] = vec[2];
+
+            out[index] = dist;
+            objHit[index] = objIndex;
+        }
     }
 }
 
 template <class T>
-cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const T radius, const vec3<T> position, CudaPointers<T>& cp) {
+cudaError_t SphereCollisor_wrapper(int count, const T radius, const vec3<T> position, CudaPointers<T>& cp, int8_t objindex) {
     cudaError_t cudaStatus;
 
     cudaStatus = cudaMemcpy(cp.d_position, &position, sizeof(vec3<T>), cudaMemcpyHostToDevice);
@@ -72,8 +86,9 @@ cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const T radius, const ve
     // Executing kernel 
     {
         dim3 threadsPerBlock(1024);
-        dim3 blocksPerGrid(ceil(double(out.size()) / double(threadsPerBlock.x)));
-        SphereCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_out, cp.d_collision, cp.d_normal, cp.d_rayList, radius, cp.d_position, out.size());
+        dim3 blocksPerGrid(ceil(double(count) / double(threadsPerBlock.x)));
+        SphereCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_dist, cp.d_collision, cp.d_normal, cp.d_hitobject, cp.d_rayList,
+            radius, cp.d_position, count, objindex);
     }
 
     // Check for any errors launching the kernel
@@ -91,20 +106,13 @@ cudaError_t SphereCollisor_wrapper(std::vector<T>& out, const T radius, const ve
         goto ErrorCollisor;
     }
 
-    // Transfer data back to host memory
-    cudaStatus = cudaMemcpy(out.data(), cp.d_out, sizeof(T) * out.size(), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed in d_out Device to Host!\n");
-        goto ErrorCollisor;
-    }
-
 ErrorCollisor:
     return cudaStatus;
 }
 
 template <class T>
-void Sphere<T>::CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp) {
-    cudaError_t cudaStatus = SphereCollisor_wrapper<T>(out, diameter / 2., position, cp);
+void Sphere<T>::CheckCollisionCuda(CudaPointers<T>& cp, int count, int8_t objindex) {
+    cudaError_t cudaStatus = SphereCollisor_wrapper<T>(count, diameter / 2., position, cp, objindex);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "Sphere Collisor Failed\n");
     }
@@ -135,5 +143,4 @@ T Sphere<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal
     return dist;
 }
 
-template class Sphere<double>;
-template class Sphere<float>;
+template class Sphere<typeT>;

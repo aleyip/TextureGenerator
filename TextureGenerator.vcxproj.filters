@@ -41,6 +41,15 @@
     <ClInclude Include="CudaPointers.h">
       <Filter>Arquivos de Cabeçalho</Filter>
     </ClInclude>
+    <ClInclude Include="Light.h">
+      <Filter>Arquivos de Cabeçalho</Filter>
+    </ClInclude>
+    <ClInclude Include="PointLight.h">
+      <Filter>Arquivos de Cabeçalho</Filter>
+    </ClInclude>
+    <ClInclude Include="defines.h">
+      <Filter>Arquivos de Cabeçalho</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Object.cu">
@@ -61,6 +70,12 @@
       <Filter>Arquivos de Origem</Filter>
     </CudaCompile>
     <CudaCompile Include="Cube.cu">
+      <Filter>Arquivos de Origem</Filter>
+    </CudaCompile>
+    <CudaCompile Include="PointLight.cu">
+      <Filter>Arquivos de Origem</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Light.cu">
       <Filter>Arquivos de Origem</Filter>
     </CudaCompile>
   </ItemGroup>

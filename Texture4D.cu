@@ -1,5 +1,6 @@
 #include "Texture4D.h"
 #include "Object.h"
+#include "defines.h"
 
 #include <stdio.h>
 #include <iostream>
@@ -208,5 +209,4 @@ void Texture4D<T>::RayLightGeneratorCuda(int start, int length, T radius, int ws
 	}
 }
 
-template class Texture4D<float>;
-template class Texture4D<double>;
+template class Texture4D<typeT>;

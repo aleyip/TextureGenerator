@@ -34,6 +34,10 @@ struct vec3 {
 		return vec3<T>(value * x, value * y, value * z);
 	}
 
+	inline vec3<T> operator*(const vec3<T>& value) {
+		return vec3<T>(value.x * x, value.y * y, value.z * z);
+	}
+
 	inline void operator=(const vec3<T>& value) {
 		x = value.x;
 		y = value.y;

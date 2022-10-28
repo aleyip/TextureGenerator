@@ -9,9 +9,9 @@ public:
 	T diameter, height;
 
 	Cylinder() = default;
-	Cylinder(vec3<T> origin, vec3<T> rotation, T diameter, T height, cv::Vec<T,4> color) : diameter(diameter), height(height), Object<T>(origin, rotation, color) {};
+	Cylinder(vec3<T> origin, vec3<T> rotation, T diameter, T height, cv::Vec<T, 3> color, T specular = .3, uint8_t specularShininness = 32) : diameter(diameter), height(height), Object<T>(origin, rotation, color, specular, specularShininness) {};
 	~Cylinder() = default;
 
 	T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
-	void CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp);
+	void CheckCollisionCuda(CudaPointers<T>& cp, int count, int8_t objindex);
 };

@@ -13,6 +13,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+#include "defines.h"
+
 #include "Object.h"
 #include "Sphere.h"
 #include "Cylinder.h"
@@ -26,12 +28,14 @@
 #define WINDOW_SIZE 3
 #define BUFFERSIZE 100000000
 
+#define specPower 0.3
+#define specShiny 16
+
 #define TEXU 512
 #define TEXV 256
 #define TEXS 33
 #define TEXT 33
 
-using typeT = double;
 using ObjectT = Object<typeT>;
 using SphereT = Sphere<typeT>;
 using CylinderT = Cylinder<typeT>;
@@ -42,6 +46,9 @@ using vec3T = vec3<typeT>;
 using CudaPointersT = CudaPointers<typeT>;
 
 void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
+	//PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 4.5, 2), cv::Vec<typeT, 3>(1, 1, 1));
+	PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 0, 0), vec3T(1, 1, 1));
+	
 	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
 
@@ -53,7 +60,7 @@ void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov
 
 	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
 	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
-	img.forEach<cv::Vec<typeT, 4>>([&obj, &viewerPos, &viewerDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
+	img.forEach<cv::Vec<typeT, 4>>([&obj, &light, &viewerPos, &viewerDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
 		typeT dV = ((1.0 - 2.0 * pos[0] / typeT(img.rows - 1)) * halfHeight);
 		typeT dH = ((1.0 - 2.0 * pos[1] / typeT(img.cols - 1)) * halfHeight);
 
@@ -66,20 +73,25 @@ void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov
 		);
 
 		RayLightT ray = RayLightT(viewerPos, vD);
-		vec3T normal, collision;
-		ObjectT* colObj[1];
+		vec3T normal_out, normal, collision_out, collision;
+		int objsel = -1;
 		typeT dist = -1;
 		for (int i = 0; i < NUMOBJ; i++)
 		{
-			typeT d = obj[i]->CheckCollision(ray, collision, normal);
+			typeT d = obj[i]->CheckCollision(ray, collision_out, normal_out);
 			//typeT d = obj[i]->CheckCollision(ray);
 			if ((d < dist && d >= 0) || dist == -1) {
 				dist = d;
-				colObj[0] = obj[i];
+				normal = normal_out;
+				collision = collision_out;
+				objsel = i;
 			}
 		}
 
-		if (dist >= 0)pixel = colObj[0]->color;
+		if (dist >= 0) {
+			pixel = obj[objsel]->computeColor(light, normal, viewerPos, collision);
+			pixel[3] = 1;
+		}
 		else pixel = cv::Vec4d(0, 0, 0, 0);
 	});
 
@@ -91,6 +103,8 @@ void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov
 }
 
 void generateViewPortCuda(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
+	PointLight<typeT> light = PointLight<typeT>(vec3T(-4, 0, 0), vec3T(1, 1, 1));
+
 	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
 
@@ -105,6 +119,17 @@ void generateViewPortCuda(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT
 
 	CudaPointersT cp;
 	cp.allocate(img.total(), 0, 0, 0, 0);
+	{
+		std::vector <cv::Vec<typeT, 4>> objColorList(NUMOBJ);
+		std::vector <uint8_t> objShinyList(NUMOBJ);
+		for (int i = 0; i < NUMOBJ; i++) {
+			objColorList[i] = obj[i]->color;
+			objShinyList[i] = obj[i]->specularShininness;
+		}
+		cp.uploadObjectColorProp(objColorList, objShinyList);
+	}
+	cp.setHitObjectList(-1, img.total());
+	cp.setDistList(10e10, img.total());
 
 	std::vector<RayLightT> rayList = std::vector<RayLightT>(img.total());
 	for (int r = 0; r < img.rows; r++)
@@ -121,39 +146,27 @@ void generateViewPortCuda(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT
 				viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
 			);
 
-			//if ((r == 1024 || r == 0) && c == 1024) {
-			//	printf("a %d %d %f, %f, %f\n", r, c, vDaux.x, vDaux.y, vDaux.z);
-			//	printf("b %d %d %f, %f, %f\n", r, c, vD.x, vD.y, vD.z);
-			//}
-
-			rayList[img.rows * c + r] = RayLightT(viewerPos, vD);
+			rayList[img.cols * r + c] = RayLightT(viewerPos, vD);
 		}
-
-	std::vector<typeT>distList = std::vector<typeT>(img.total(), -1);
-	std::vector<int>selObjList = std::vector<int>(img.total(), -1);
-
 	cp.uploadRayList(rayList);
+
+	std::vector<int8_t>selObjList = std::vector<int8_t>(img.total(), -1);
+	std::vector<typeT>distList = std::vector<typeT>(img.total(), -1);
+
 	for (int j = 0; j < NUMOBJ; j++)
 	{
 		std::vector<typeT> dList = std::vector<typeT>(rayList.size());
-		obj[j]->CheckCollisionCuda(dList, cp);
-		for(int i = 0; i < img.total(); i++)
-			if ((dList[i] < distList[i] && dList[i] >= 0) || distList[i] == -1) {
-				distList[i] = dList[i];
-				selObjList[i] = j;
-			}
+		obj[j]->CheckCollisionCuda(cp, img.total(), j);
 	}
 
+	Light<typeT>::setAmbientLightCUDA(cp, 0.1, img.total());
+
+	light.addLightEffectsCUDA(cp, viewerPos, img.total());
+
+	cp.downloadPixelColor((cv::Vec<typeT, 4> *)(img.data), img.total());
 	cp.free();
 
-	for (int r = 0; r < img.rows; r++)
-		for (int c = 0; c < img.cols; c++)
-		{
-			if (distList[img.rows * c + r] >= 0)img.at<cv::Vec4d>(r, c) = obj[selObjList[img.rows * c + r]]->color;
-			else img.at<cv::Vec4d>(r, c) = cv::Vec4d(0, 0, 0, 0);
-		}
-
-	cv::resize(img, img, cv::Size(720, 720));
+	//cv::resize(img, img, cv::Size(720, 720));
 	img.convertTo(img, CV_8UC4, 255, 0);
 	cv::imshow("teste2", img);
 	cv::imwrite("D:/testeGenCuda.png", img);
@@ -316,32 +329,13 @@ void generateTextureCuda(ObjectT** obj) {
 		std::cout << countLoop << "/" << totalSize;
 
 		tex.RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
-		//std::vector<RayLightT> rayList = std::vector<RayLightT>(bufferSize * wsTotal);
-		//cp.downloadRayList(rayList);
-		//for (int i = 0; i < rayList.size(); i++) {
-		//	int index = countLoop + i / wsTotal;
-		//	int u = (index) / (size[3] * size[2] * size[1]);
-		//	int v = ((index / size[3]) / size[2]) % size[1];
-		//	int s = (index / size[3]) % size[2];
-		//	int t = index % size[3];
-		//	if (u == 256 && v == 128 && s == 0 && t == 0) {
-		//		printf("u: %d v : %d s: %d t: %d ", index / (size[3] * size[2] * size[1]), ((index / size[3]) / size[2]) % size[1], (index / size[3]) % size[2], index % size[3]);
-		//		printf("%d pos: %f %f %f dir: %f %f %f\n", i, rayList[i].origin.x, rayList[i].origin.y, rayList[i].origin.z, rayList[i].direction.x, rayList[i].direction.y, rayList[i].direction.z);
-		//	}
-		//}
-		//auto end = std::chrono::steady_clock::now();
-		//std::cout << "Ray Light Elapsed time in milliseconds: "
-		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-		//	<< " ms" << std::endl;
-
-		//auto start1 = std::chrono::steady_clock::now();
 		for (int& i : objSel)
 			i = -1;
 		for (typeT& i : dist)
 			i = -1;
 		for (int o = 0; o < NUMOBJ; o++)
 		{
-			obj[o]->CheckCollisionCuda(d, cp);
+			obj[o]->CheckCollisionCuda(cp, countLoop, o);
 #pragma omp parallel for
 			for (int i = 0; i < d.size(); i++)
 				if ((d[i] < dist[i] && d[i] >= 0) || dist[i] == -1) {
@@ -424,17 +418,18 @@ int main()
 	const int wsTotal = ws * ws * ws * ws;
 
 	ObjectT* obj[NUMOBJ];
-	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec4d(1, 1, 1, 1));
-	obj[1] = new SphereT(vec3T(0, 0, -1.87), 1, cv::Vec4d(0, 0, 1, 1));
-	obj[2] = new CylinderT(vec3T(2.62, 0, 0), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0.941, 0.125, 0.627, 1));
-	obj[3] = new CubeT(vec3T(-1.2, .71, -.68), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 0, 1));
-	obj[4] = new CubeT(vec3T(1.47, -1.05, .93), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 1, 1));
-	obj[5] = new CylinderT(vec3T(-1.07, -.41, 1.81), vec3T(0, 0, 0), 1, 2, cv::Vec4d(1, 0, 0, 1));
-	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0, 0, 0, 1));
+	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec<typeT, 3>(1, 1, 1), specPower, specShiny);
+	obj[1] = new SphereT(vec3T(0, 0, -1.87), 1, cv::Vec<typeT, 3>(0, 0, 1), specPower, specShiny);
+	obj[2] = new CylinderT(vec3T(2.62, 0, 0), vec3T(0, 0, 0), 1, 2, cv::Vec<typeT, 3>(0.941, 0.125, 0.627), specPower, specShiny);
+	obj[3] = new CubeT(vec3T(-1.2, .71, -.68), vec3T(0, 0, 0), 1, 1, 1, cv::Vec<typeT, 3>(0, 1, 0), specPower, specShiny);
+	obj[4] = new CubeT(vec3T(1.47, -1.05, .93), vec3T(0, 0, 0), 1, 1, 1, cv::Vec<typeT, 3>(0, 1, 1), specPower, specShiny);
+	obj[5] = new CylinderT(vec3T(-1.07, -.41, 1.81), vec3T(90, 0, 0), 1, 2, cv::Vec<typeT, 3>(1, 0, 0), specPower, specShiny);
+	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec<typeT, 3>(0, 0, 0), specPower, specShiny);
 
 	//generateTexture(obj);
 	//generateTextureCuda(obj);
-	generateViewPort(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
+	//generateViewPort(obj, vec3T(-2, 0, -1.87), vec3T(1, 0, 0), 90);
+	//generateViewPort(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
 	generateViewPortCuda(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
 
 	return 0;
