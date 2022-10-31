@@ -50,6 +50,9 @@
     <ClInclude Include="defines.h">
       <Filter>Arquivos de Cabeçalho</Filter>
     </ClInclude>
+    <ClInclude Include="DirectionalLight.h">
+      <Filter>Arquivos de Cabeçalho</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Object.cu">
@@ -76,6 +79,9 @@
       <Filter>Arquivos de Origem</Filter>
     </CudaCompile>
     <CudaCompile Include="Light.cu">
+      <Filter>Arquivos de Origem</Filter>
+    </CudaCompile>
+    <CudaCompile Include="DirectionalLight.cu">
       <Filter>Arquivos de Origem</Filter>
     </CudaCompile>
   </ItemGroup>

@@ -27,6 +27,7 @@
 
 #include "Light.h"
 #include "PointLight.h"
+#include "DirectionalLight.h"
 
 #define NUMOBJ 7
 #define NUMLIGHT 1
@@ -55,6 +56,7 @@ using CudaPointersT = CudaPointers<typeT>;
 
 using LightT = Light<typeT>;
 using PointLightT = PointLight<typeT>;
+using DirectionalLightT = DirectionalLight<typeT>;
 
 void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
 	//PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 4.5, 2), cv::Vec<typeT, 3>(1, 1, 1));
@@ -417,7 +419,7 @@ int main()
 	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec<typeT, 3>(0, 0, 0), specPower, specShiny);
 
 	LightT* light[NUMLIGHT];
-	light[0] = new PointLightT(vec3T(-6, 0, 0), vec3T(1, 1, 1));
+	light[0] = new DirectionalLightT(vec3T(-6, 0, 0), vec3T(1, 1, 1));
 
 	//generateTexture(obj, light);
 	generateTextureCuda(obj, light);

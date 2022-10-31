@@ -62,7 +62,8 @@ __global__ void addLightEffects_kernel(T* out, T* collision, T* normal, int8_t* 
             //aux_vec[2] *= aux_db;
 
             //Viewer Dir
-            T aux_vec2[] = { rayLight[0] - collision_ptr[0], rayLight[1] - collision_ptr[1], rayLight[2] - collision_ptr[2] };
+            //T aux_vec2[] = { rayLight[0] - collision_ptr[0], rayLight[1] - collision_ptr[1], rayLight[2] - collision_ptr[2] };
+            T aux_vec2[] = { -rayLight[3], -rayLight[4], -rayLight[5] };
             aux_db = aux_vec2[0] * aux_vec2[0] + aux_vec2[1] * aux_vec2[1] + aux_vec2[2] * aux_vec2[2];
             aux_db = 1. / sqrt(aux_db);
             aux_vec2[0] *= aux_db;
@@ -118,7 +119,7 @@ cudaError_t addLightEffects_wrapper(int count, vec3<T> lightColor, vec3<T> light
     {
         dim3 threadsPerBlock(1024);
         dim3 blocksPerGrid(ceil(double(count) / double(threadsPerBlock.x)));
-        addLightEffects_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, cp.d_collisionList, cp.d_normalList, cp.d_hitobjectList, cp.d_objcolorList, cp.d_objShinList,
+        addLightEffects_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_colorList, cp.d_collisionList, cp.d_normalList, cp.d_hitobjectList, cp.d_objcolorList, cp.d_objShinList,
             cp.d_rotation, cp.d_color, cp.d_rayList, count);
     }
 
