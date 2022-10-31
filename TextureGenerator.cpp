@@ -19,17 +19,24 @@
 #include "Sphere.h"
 #include "Cylinder.h"
 #include "Cube.h"
+
 #include "RayLight.h"
 #include "Texture4D.h"
 
 #include "CudaPointers.h"
 
+#include "Light.h"
+#include "PointLight.h"
+
 #define NUMOBJ 7
-#define WINDOW_SIZE 3
-#define BUFFERSIZE 100000000
+#define NUMLIGHT 1
+
+#define WINDOW_SIZE 1
+#define BUFFERSIZE 50000000
 
 #define specPower 0.3
 #define specShiny 16
+#define ambientPower 0.1
 
 #define TEXU 512
 #define TEXV 256
@@ -40,14 +47,18 @@ using ObjectT = Object<typeT>;
 using SphereT = Sphere<typeT>;
 using CylinderT = Cylinder<typeT>;
 using CubeT = Cube<typeT>;
+
 using RayLightT = RayLight<typeT>;
 using Texture4DT = Texture4D<typeT>;
 using vec3T = vec3<typeT>;
 using CudaPointersT = CudaPointers<typeT>;
 
-void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
+using LightT = Light<typeT>;
+using PointLightT = PointLight<typeT>;
+
+void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
 	//PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 4.5, 2), cv::Vec<typeT, 3>(1, 1, 1));
-	PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 0, 0), vec3T(1, 1, 1));
+	
 	
 	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
@@ -79,7 +90,6 @@ void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov
 		for (int i = 0; i < NUMOBJ; i++)
 		{
 			typeT d = obj[i]->CheckCollision(ray, collision_out, normal_out);
-			//typeT d = obj[i]->CheckCollision(ray);
 			if ((d < dist && d >= 0) || dist == -1) {
 				dist = d;
 				normal = normal_out;
@@ -89,8 +99,9 @@ void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov
 		}
 
 		if (dist >= 0) {
-			pixel = obj[objsel]->computeColor(light, normal, viewerPos, collision);
-			pixel[3] = 1;
+			pixel = Light<typeT>::setAmbientLight(*obj[objsel], ambientPower);
+			for (int i = 0; i < NUMLIGHT; i++)
+				pixel += light[i]->lightEffect(*obj[objsel], collision, normal, viewerPos);
 		}
 		else pixel = cv::Vec4d(0, 0, 0, 0);
 	});
@@ -102,8 +113,7 @@ void generateViewPort(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov
 	cv::waitKey(0);
 }
 
-void generateViewPortCuda(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
-	PointLight<typeT> light = PointLight<typeT>(vec3T(-4, 0, 0), vec3T(1, 1, 1));
+void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov = 60) {
 
 	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
@@ -150,30 +160,24 @@ void generateViewPortCuda(ObjectT** obj, vec3T viewerPos, vec3T viewerDir, typeT
 		}
 	cp.uploadRayList(rayList);
 
-	std::vector<int8_t>selObjList = std::vector<int8_t>(img.total(), -1);
-	std::vector<typeT>distList = std::vector<typeT>(img.total(), -1);
-
 	for (int j = 0; j < NUMOBJ; j++)
-	{
-		std::vector<typeT> dList = std::vector<typeT>(rayList.size());
 		obj[j]->CheckCollisionCuda(cp, img.total(), j);
-	}
 
-	Light<typeT>::setAmbientLightCUDA(cp, 0.1, img.total());
-
-	light.addLightEffectsCUDA(cp, viewerPos, img.total());
+	Light<typeT>::setAmbientLightCUDA(cp, ambientPower, img.total());
+	for (int j = 0; j < NUMLIGHT; j++)
+		light[j]->addLightEffectsCUDA(cp, img.total());
 
 	cp.downloadPixelColor((cv::Vec<typeT, 4> *)(img.data), img.total());
 	cp.free();
 
-	//cv::resize(img, img, cv::Size(720, 720));
+	cv::resize(img, img, cv::Size(720, 720));
 	img.convertTo(img, CV_8UC4, 255, 0);
 	cv::imshow("teste2", img);
 	cv::imwrite("D:/testeGenCuda.png", img);
 	cv::waitKey(0);
 }
 
-void generateTexture(ObjectT** obj) {
+void generateTexture(ObjectT** obj, LightT** light) {
 	const int ws = WINDOW_SIZE * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
@@ -206,7 +210,7 @@ void generateTexture(ObjectT** obj) {
 		auto start = std::chrono::steady_clock::now();
 		std::cout << "Step t" << t << std::endl;
 		for (int s = 0; s < size[2]; s++) {
-			std::cout << "Step t" << t << " s " << s << std::endl;
+			std::cout << "Step t" << t << "/" << size[2] << " s " << s << "/" << size[3] << std::endl;
 			auto start = std::chrono::steady_clock::now();
 #pragma omp parallel for collapse(2)
 			for (int v = 0; v < size[1]; v++) {
@@ -215,8 +219,12 @@ void generateTexture(ObjectT** obj) {
 					double angleBase[] = { -(inc[0] * u - M_PI), inc[1] * v - M_PI_2, inc[2] * s - M_PI_2, inc[3] * t - M_PI_2 };
 
 					cv::Vec<typeT, 4> sumPixel = cv::Vec<typeT, 4>(0, 0, 0, 0);
+					cv::Vec<typeT, 4> color;
+					vec3T normal_out, normal, collision_out, collision;
+					int objsel;
+					typeT dist;
+					double d;
 
-					int ind = 0;
 					//#pragma omp parallel for collapse(4)
 					for (int n = -WINDOW_SIZE; n <= WINDOW_SIZE; n++)
 						for (int m = -WINDOW_SIZE; m <= WINDOW_SIZE; m++)
@@ -246,19 +254,25 @@ void generateTexture(ObjectT** obj) {
 
 									//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
 
-									cv::Vec4d color;
-									double dist = -1;
+									color = cv::Vec<typeT, 4>(0, 0, 0, 0);
+									objsel = -1;
+									dist = 10e10;
 									for (int i = 0; i < NUMOBJ; i++)
 									{
-										double d = obj[i]->CheckCollision(ray, collision, normal);
-										if ((d < dist && d >= 0) || dist == -1) {
+										d = obj[i]->CheckCollision(ray, collision, normal);
+										if (d < dist && d >= 0) {
 											dist = d;
-											color = obj[i]->color;
+											normal = normal_out;
+											collision = collision_out;
+											objsel = i;
 										}
-										//printf("dist: %f %f ", d, dist);
 									}
-									if (dist >= 0)sumPixel += color;
-									//std::cout << std::endl;
+									if (objsel != -1) {
+										color = LightT::setAmbientLight(*obj[objsel], ambientPower);
+										for (int i = 0; i < NUMLIGHT; i++)
+											color += light[i]->lightEffect(*obj[objsel], collision, normal, ray.origin);
+									}
+									sumPixel += color;
 								}
 					tex(u, v, s, t) = sumPixel * denom;
 				}
@@ -273,6 +287,8 @@ void generateTexture(ObjectT** obj) {
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
 			<< " ms" << std::endl;
 	}
+
+	cv::threshold(tex.texture, tex.texture, 1, 1, cv::THRESH_TRUNC);
 
 	cv::Mat img = cv::Mat(256, 512, CV_64FC4);
 	for (int u = 0; u < 512; u++)
@@ -293,7 +309,7 @@ void generateTexture(ObjectT** obj) {
 	}
 }
 
-void generateTextureCuda(ObjectT** obj) {
+void generateTextureCuda(ObjectT** obj, LightT** light) {
 	const int ws = WINDOW_SIZE * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
@@ -310,77 +326,54 @@ void generateTextureCuda(ObjectT** obj) {
 	typeT denom = 1. / wsTotal;
 	std::cout << "Denominador: " << denom << std::endl;
 
-	//std::vector<RayLightT> rayList = std::vector< RayLightT>(totalSize);
-	std::vector<typeT> dist = std::vector< typeT>(bufferSize * wsTotal);
-	std::vector<int> objSel = std::vector<int>(bufferSize * wsTotal);
-	std::vector<typeT> d = std::vector<typeT>(bufferSize * wsTotal);
-
 	CudaPointersT cp;
-	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
 	cp.allocate(bufferSize * wsTotal, TEXU, TEXV, TEXS, TEXT);
+	{
+		std::vector <cv::Vec<typeT, 4>> objColorList(NUMOBJ);
+		std::vector <uint8_t> objShinyList(NUMOBJ);
+		for (int i = 0; i < NUMOBJ; i++) {
+			objColorList[i] = obj[i]->color;
+			objShinyList[i] = obj[i]->specularShininness;
+		}
+		cp.uploadObjectColorProp(objColorList, objShinyList);
+	}
+	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
 
 	std::cout << "Compile Texture" << std::endl;
 	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
 	int length = bufferSize;
+	int bufferTotal;
+	cv::Vec<typeT, 4>* dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
+
 	while (countLoop < totalSize)
 	{
 		auto start = std::chrono::steady_clock::now();
 
-		std::cout << countLoop << "/" << totalSize;
+		bufferTotal = length * wsTotal;
+
+		std::cout << countLoop << "/" << totalSize << std::endl;
 
 		tex.RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
-		for (int& i : objSel)
-			i = -1;
-		for (typeT& i : dist)
-			i = -1;
+
+		cp.setHitObjectList(-1, bufferTotal);
+		cp.setDistList(10e10, bufferTotal);
 		for (int o = 0; o < NUMOBJ; o++)
 		{
-			obj[o]->CheckCollisionCuda(cp, countLoop, o);
-#pragma omp parallel for
-			for (int i = 0; i < d.size(); i++)
-				if ((d[i] < dist[i] && d[i] >= 0) || dist[i] == -1) {
-					dist[i] = d[i];
-					objSel[i] = o;
-				}
+			obj[o]->CheckCollisionCuda(cp, bufferTotal, o);
 		}
+		LightT::setAmbientLightCUDA(cp, 0.1, bufferTotal);
+		for (int j = 0; j < NUMLIGHT; j++)
+			light[j]->addLightEffectsCUDA(cp, bufferTotal);
 
-#pragma omp parallel for
-		for (int i = 0; i < length; i++)
-		{
-			int u = (countLoop + i) / (size[3] * size[2] * size[1]);
-			int v = (((countLoop + i) / size[3]) / size[2]) % size[1];
-			int s = ((countLoop + i) / size[3]) % size[2];
-			int t = (countLoop + i) % size[3];
-
-			cv::Vec4d sumPixel = cv::Vec4d(0, 0, 0, 0);
-			for (int j = 0; j < wsTotal; j++)
-			{
-				//if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0)) {
-				//	printf("u: %d v: %d s: %d t: %d ", u, v, s, t);
-				//	std::cout << i << " " << j << " " << wsTotal * i + j << " " << dist[wsTotal * i + j] << " " << objSel[wsTotal * i + j] << std::endl;
-				//}
-				if (dist[wsTotal * i + j] >= 0)
-				{
-					sumPixel += obj[objSel[wsTotal * i + j]]->color;/*
-					if (u == 256 && v == 128 && s == 0 && t == 0) {
-						std::cout << " Color: " << color << sumPixel << std::endl;
-					}*/
-				}
-				//else if (u == 256 && v == 128 && s == 0 && t == 0) std::cout << " No hit" << std::endl;
-			}
-			tex.texture.at<cv::Vec<typeT,4>>(countLoop + i) = sumPixel * denom;
-			tex(u, v, s, t) = sumPixel * denom;
-			//if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0))
-			//	std::cout << " Final Color: " << sumPixel * denom << tex(u, v, s, t) << std::endl;
-
-		}
+		cp.pixelReduction(wsTotal, length);
+		cp.downloadPixelColor(dataPixel, length);
 
 		auto end = std::chrono::steady_clock::now();
 		std::cout << " Compare Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
 			<< " ms" << std::endl;
 		//return;
-
+		dataPixel += length;
 		countLoop += length;
 		if (totalSize - countLoop < bufferSize)
 			length = totalSize - countLoop;
@@ -414,9 +407,6 @@ void generateTextureCuda(ObjectT** obj) {
 
 int main()
 {
-	const int ws = WINDOW_SIZE * 2 + 1;
-	const int wsTotal = ws * ws * ws * ws;
-
 	ObjectT* obj[NUMOBJ];
 	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec<typeT, 3>(1, 1, 1), specPower, specShiny);
 	obj[1] = new SphereT(vec3T(0, 0, -1.87), 1, cv::Vec<typeT, 3>(0, 0, 1), specPower, specShiny);
@@ -426,11 +416,13 @@ int main()
 	obj[5] = new CylinderT(vec3T(-1.07, -.41, 1.81), vec3T(90, 0, 0), 1, 2, cv::Vec<typeT, 3>(1, 0, 0), specPower, specShiny);
 	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec<typeT, 3>(0, 0, 0), specPower, specShiny);
 
-	//generateTexture(obj);
-	//generateTextureCuda(obj);
-	//generateViewPort(obj, vec3T(-2, 0, -1.87), vec3T(1, 0, 0), 90);
-	//generateViewPort(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
-	generateViewPortCuda(obj, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
+	LightT* light[NUMLIGHT];
+	light[0] = new PointLightT(vec3T(-6, 0, 0), vec3T(1, 1, 1));
+
+	//generateTexture(obj, light);
+	generateTextureCuda(obj, light);
+	//generateViewPort(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
+	//generateViewPortCuda(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
 
 	return 0;
 }

@@ -8,13 +8,17 @@ template<class T>
 class CudaPointers
 {
 public:
-	T* d_rayList = 0, * d_dist = 0, * d_position = 0, * d_rotation = 0;
-	T* d_collision = 0, * d_normal = 0;
-	T* d_objcolor = 0;
-	T* d_color = 0;
-	int8_t* d_hitobject = 0;
-	uint8_t* d_objShin = 0;
-	int* d_size = 0;
+	T* d_rayList = 0; // vec6 : bufferSize
+	T* d_collisionList = 0, * d_normalList = 0; // vec3 : bufferSize
+	T* d_colorList = 0; // vec4 : bufferSize
+	T* d_distList = 0; // value : bufferSize
+	int8_t* d_hitobjectList = 0; // char : bufferSize
+
+	T* d_objcolorList = 0; // vec4 : objSize
+	uint8_t* d_objShinList = 0; // char : objSize
+
+	T* d_color = 0, * d_position = 0, * d_rotation = 0; // vec3
+	int* d_size = 0; // int4
 
 	CudaPointers() = default;
 	~CudaPointers() {
@@ -40,6 +44,7 @@ public:
 
 	void uploadObjectColorProp(std::vector<cv::Vec<T, 4>> colorList, std::vector<uint8_t> shinyList);
 
+	void pixelReduction(int wsTotal, int count);
 	void downloadPixelColor(cv::Vec<T, 4>* data, int count);
 	
 	void allocate(int totalSize, int usize, int vsize, int ssize, int tsize);

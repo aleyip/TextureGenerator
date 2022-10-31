@@ -87,7 +87,7 @@ cudaError_t SphereCollisor_wrapper(int count, const T radius, const vec3<T> posi
     {
         dim3 threadsPerBlock(1024);
         dim3 blocksPerGrid(ceil(double(count) / double(threadsPerBlock.x)));
-        SphereCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_dist, cp.d_collision, cp.d_normal, cp.d_hitobject, cp.d_rayList,
+        SphereCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_distList, cp.d_collisionList, cp.d_normalList, cp.d_hitobjectList, cp.d_rayList,
             radius, cp.d_position, count, objindex);
     }
 

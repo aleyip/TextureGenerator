@@ -36,7 +36,7 @@ cudaError_t SetAmbienteLight_wrapper(int count, T ambientValue, CudaPointers<T>&
     {
         dim3 threadsPerBlock(1024);
         dim3 blocksPerGrid(ceil(double(count) / double(threadsPerBlock.x)));
-        SetAmbientLight_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, cp.d_hitobject, cp.d_objcolor, ambientValue, count);
+        SetAmbientLight_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_colorList, cp.d_hitobjectList, cp.d_objcolorList, ambientValue, count);
     }
 
     // Check for any errors launching the kernel
@@ -63,6 +63,13 @@ static void Light<T>::setAmbientLightCUDA(CudaPointers<T>& cp, T ambientValue, i
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "Ambient Light Failed\n");
     }
+}
+
+template<class T>
+static cv::Vec<T, 4> Light<T>::setAmbientLight(Object<T>& obj, T ambientValue) {
+    cv::Vec<T, 4> color = ambientValue * obj.color;
+    color[3] = 1;
+    return color;
 }
 
 template class Light<typeT>;

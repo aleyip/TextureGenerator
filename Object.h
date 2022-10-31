@@ -6,7 +6,6 @@
 
 #include "RayLight.h"
 #include "CudaPointers.h"
-#include "PointLight.h"
 
 #include <opencv2/opencv.hpp>
 #include <vector>
@@ -31,10 +30,6 @@ public:
 
 	virtual T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
 	virtual void CheckCollisionCuda(CudaPointers<T>& cp, int count, int8_t objindex);
-
-	T calculateDiffuseReflex(vec3<T> lightPos, vec3<T> normal, vec3<T> collisionPos);
-
-	cv::Vec<T, 4> computeColor(PointLight<T> light, vec3<T> normal, vec3<T> viewerPos, vec3<T> collisionPos);
 };
 
 #include "Object.cu"

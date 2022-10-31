@@ -122,7 +122,7 @@ cudaError_t CylinderCollisor_wrapper(int count, const T diameter, const T height
     {
         dim3 threadsPerBlock(512);
         dim3 blocksPerGrid(ceil(double(count) / double(threadsPerBlock.x)));
-        CylinderCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_dist, cp.d_collision, cp.d_normal, cp.d_hitobject, cp.d_rayList,
+        CylinderCollisor_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_distList, cp.d_collisionList, cp.d_normalList, cp.d_hitobjectList, cp.d_rayList,
             diameter/2, height/2, cp.d_position, cp.d_rotation, count, objindex);
     }
 

@@ -1,4 +1,4 @@
-#include "PointLight.h"
+#include "DirectionalLight.h"
 #include "defines.h"
 
 #include <cuda.h>
@@ -19,7 +19,7 @@ __device__ inline void atomicAdd(double* address, double value) {
 
 template<class T>
 __global__ void addLightEffects_kernel(T* out, T* collision, T* normal, int8_t* objHit, T* objColor, uint8_t* shininess,
-    T* lightPos, T* lightCol, T* ray, const int sizeList) {
+    T* lightDir, T* lightCol, T* ray, const int sizeList) {
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index < sizeList) {
@@ -33,7 +33,7 @@ __global__ void addLightEffects_kernel(T* out, T* collision, T* normal, int8_t* 
             T* normal_ptr = normal + 3 * index;
 
             //Light Dir
-            T aux_vec[] = { lightPos[0] - collision_ptr[0],lightPos[1] - collision_ptr[1],lightPos[2] - collision_ptr[2] };
+            T aux_vec[] = { lightDir[0],lightDir[1],lightDir[2] };
             T aux_db = aux_vec[0] * aux_vec[0] + aux_vec[1] * aux_vec[1] + aux_vec[2] * aux_vec[2];
             aux_db = 1 / sqrt(aux_db);
             aux_vec[0] *= aux_db;
@@ -62,8 +62,7 @@ __global__ void addLightEffects_kernel(T* out, T* collision, T* normal, int8_t* 
             //aux_vec[2] *= aux_db;
 
             //Viewer Dir
-            //T aux_vec2[] = { rayLight[0] - collision_ptr[0], rayLight[1] - collision_ptr[1], rayLight[2] - collision_ptr[2] };
-            T aux_vec2[] = { -rayLight[3], -rayLight[4], -rayLight[5] };
+            T aux_vec2[] = { rayLight[0] - collision_ptr[0], rayLight[1] - collision_ptr[1], rayLight[2] - collision_ptr[2] };
             aux_db = aux_vec2[0] * aux_vec2[0] + aux_vec2[1] * aux_vec2[1] + aux_vec2[2] * aux_vec2[2];
             aux_db = 1. / sqrt(aux_db);
             aux_vec2[0] *= aux_db;
@@ -100,10 +99,10 @@ __global__ void addLightEffects_kernel(T* out, T* collision, T* normal, int8_t* 
 }
 
 template <class T>
-cudaError_t addLightEffects_wrapper(int count, vec3<T> lightColor, vec3<T> lightPos, CudaPointers<T>& cp) {
+cudaError_t addLightEffects_wrapper(int count, vec3<T> lightColor, vec3<T> lightDir, CudaPointers<T>& cp) {
     cudaError_t cudaStatus;
 
-    cudaStatus = cudaMemcpy(cp.d_position, &lightPos, sizeof(vec3<T>), cudaMemcpyHostToDevice);
+    cudaStatus = cudaMemcpy(cp.d_rotation, &lightDir, sizeof(vec3<T>), cudaMemcpyHostToDevice);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed in d_rotation Host to Device!\n");
         goto ErrorCollisor;
@@ -119,8 +118,8 @@ cudaError_t addLightEffects_wrapper(int count, vec3<T> lightColor, vec3<T> light
     {
         dim3 threadsPerBlock(1024);
         dim3 blocksPerGrid(ceil(double(count) / double(threadsPerBlock.x)));
-        addLightEffects_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_colorList, cp.d_collisionList, cp.d_normalList, cp.d_hitobjectList, cp.d_objcolorList, cp.d_objShinList,
-            cp.d_position, cp.d_color, cp.d_rayList, count);
+        addLightEffects_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, cp.d_collisionList, cp.d_normalList, cp.d_hitobjectList, cp.d_objcolorList, cp.d_objShinList,
+            cp.d_rotation, cp.d_color, cp.d_rayList, count);
     }
 
     // Check for any errors launching the kernel
@@ -142,27 +141,26 @@ ErrorCollisor:
 }
 
 template <class T>
-void PointLight<T>::addLightEffectsCUDA(CudaPointers<T>& cp, int count) {
-    cudaError_t cudaStatus = addLightEffects_wrapper<T>(count, color, this->position, cp);
+void DirectionalLight<T>::addLightEffectsCUDA(CudaPointers<T>& cp, int count) {
+    cudaError_t cudaStatus = addLightEffects_wrapper<T>(count, color, this->direction, cp);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "Add Light Effects Failed\n");
     }
 }
 
 template <class T>
-cv::Vec<T, 4> PointLight<T>::lightEffect(Object<T>& obj, vec3<T>& collision, vec3<T>& normal, vec3<T>& viewerPos) {
-    vec3<T> lightDir = position - collision;
-    lightDir.normalize();
+cv::Vec<T, 4> DirectionalLight<T>::lightEffect(Object<T>& obj, vec3<T>& collision, vec3<T>& normal, vec3<T>& viewerPos) {
+    direction.normalize();
     normal.normalize();
 
-    vec3<T> reflect = lightDir * (-1) - normal * (-2.) * lightDir.dot(normal);
+    vec3<T> reflect = direction * (-1) - normal * (-2.) * direction.dot(normal);
     vec3<T> viewerDir = viewerPos - collision;
     viewerDir.normalize();
 
-    vec3<T> halfAngle = viewerDir + lightDir;
+    vec3<T> halfAngle = viewerDir + direction;
     halfAngle.normalize();
 
-    T diffuse = MAX(lightDir.dot(normal), 0);
+    T diffuse = MAX(direction.dot(normal), 0);
 
     T blinn = MAX(viewerDir.dot(reflect), 0);
     blinn = pow(blinn, obj.specularShininness);
@@ -173,4 +171,4 @@ cv::Vec<T, 4> PointLight<T>::lightEffect(Object<T>& obj, vec3<T>& collision, vec
     return diffuseColor + specularColor;
 }
 
-template class PointLight<typeT>;
+template class DirectionalLight<typeT>;

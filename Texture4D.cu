@@ -36,9 +36,10 @@ __device__ void normalize(T* vec) {
 }
 
 template<class T>
-__global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius, int ws, int wsTotal) {
+__global__ void raylightgenerator_kernel(T* out, int start, int* size, const T radius, const int wsTotal) {
 	int globalIndex = start + blockIdx.x;
 	int u, v, s, t;
+	int ws = gridDim.y;
 	t = globalIndex % size[3];
 	u = globalIndex / size[3];
 	s = u % size[2];
@@ -50,7 +51,8 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius,
 	int l = threadIdx.y;
 	int m = threadIdx.z;
 	int n = blockIdx.y;
-	int index = 6 * (blockIdx.x * wsTotal + ws * (ws * (ws * n + m) + l) + k);
+
+	T* ray_ptr = out + 6 * (blockIdx.x + (ws * (ws * (ws * n + m) + l) + k) * gridDim.x);
 
 	T angle[4];
 	if (ws == 1) {
@@ -68,9 +70,9 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius,
 
 	T pos[3] = { radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]) };
 	T dir[3] = { sin(angle[2]) * cos(angle[3]), sin(angle[3]), cos(angle[2]) * cos(angle[3]) };
-	out[index] = pos[0];
-	out[index + 1] = pos[1];
-	out[index + 2] = pos[2];
+	ray_ptr[0] = pos[0];
+	ray_ptr[1] = pos[1];
+	ray_ptr[2] = pos[2];
 
 	normalize<T>(pos);
 	T versorRight[] = { -pos[2], 0., pos[0] };
@@ -84,9 +86,9 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius,
 		-(versorRight[2] * dir[0] + versorUp[2] * dir[1] + pos[2] * dir[2])
 	};
 
-	out[index + 3] = vD[0];
-	out[index + 4] = vD[1];
-	out[index + 5] = vD[2];
+	ray_ptr[3] = vD[0];
+	ray_ptr[4] = vD[1];
+	ray_ptr[5] = vD[2];
 }
 
 template<class T>
@@ -99,7 +101,7 @@ cudaError_t RayLightGenerator_wrapper(int start, int length, int* size, T radius
 		dim3 threadsPerBlock(ws, ws, ws);
 		dim3 blocksPerGrid(length, ws);
 		//std::cout << threadsPerBlock << " " << blocksPerGrid << std::endl;
-		raylightgenerator_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, start, cp.d_size, radius, ws, wsTotal);
+		raylightgenerator_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, start, cp.d_size, radius, wsTotal);
 	}
 
 	// Check for any errors launching the kernel
