@@ -164,7 +164,7 @@ cv::Vec<T, 4> PointLight<T>::lightEffect(Object<T>& obj, vec3<T>& collision, vec
 
     T diffuse = MAX(lightDir.dot(normal), 0);
 
-    T blinn = MAX(viewerDir.dot(reflect), 0);
+    T blinn = MAX(normal.dot(halfAngle), 0);
     blinn = pow(blinn, obj.specularShininness);
 
     cv::Vec<T, 4> diffuseColor = diffuse * cv::Vec<T, 4>(color.x * obj.color[0], color.y * obj.color[1], color.z * obj.color[2], 1);

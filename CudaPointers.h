@@ -25,24 +25,26 @@ public:
 		free();
 	}
 
-	void uploadRayList(std::vector<RayLight<T>> rayList);
-	void downloadRayList(std::vector<RayLight<T>>& rayList);
+	void uploadRayList(RayLight<T>* rayList, int length);
+	void downloadRayList(RayLight<T>* rayList, int length);
 
-	void uploadNormalList(std::vector<vec3<T>> normalList);
-	void downloadNormalList(std::vector<vec3<T>>& normalList);
+	void normalReduction(int wsTotal, int count);
+	void uploadNormalList(vec3<T>* normalList, int length);
+	void downloadNormalList(vec3<T>* normalList, int length);
 
-	void uploadCollisionList(std::vector<vec3<T>> collisionList);
-	void downloadCollisionList(std::vector<vec3<T>>& collisionList);
+	void uploadCollisionList(vec3<T>* collisionList, int length);
+	void downloadCollisionList(vec3<T>* collisionList, int length);
 
-	void uploadDistList(std::vector<T> distList);
-	void downloadDistList(std::vector<T>& distList);
+	void distReduction(int wsTotal, int count);
+	void uploadDistList(T* distList, int length);
+	void downloadDistList(T* distList, int length);
 	void setDistList(T value, int sizeList);
 
-	void uploadHitObjectList(std::vector<int8_t> hitobjectList);
-	void downloadHitObjectList(std::vector<int8_t>& hitobjectList);
+	void uploadHitObjectList(int8_t* hitobjectList, int length);
+	void downloadHitObjectList(int8_t* hitobjectList, int length);
 	void setHitObjectList(int8_t value, int sizeList);
 
-	void uploadObjectColorProp(std::vector<cv::Vec<T, 4>> colorList, std::vector<uint8_t> shinyList);
+	void uploadObjectColorProp(cv::Vec<T, 4>* colorList, uint8_t *shinyList, int length);
 
 	void pixelReduction(int wsTotal, int count);
 	void downloadPixelColor(cv::Vec<T, 4>* data, int count);

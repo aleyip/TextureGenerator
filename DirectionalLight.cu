@@ -161,14 +161,16 @@ cv::Vec<T, 4> DirectionalLight<T>::lightEffect(Object<T>& obj, vec3<T>& collisio
     vec3<T> halfAngle = viewerDir + direction;
     halfAngle.normalize();
 
-    T diffuse = MAX(direction.dot(normal), 0);
+    T diffuse = direction.dot(normal);
+    if (diffuse < 0) diffuse = 0;
 
-    T blinn = MAX(viewerDir.dot(reflect), 0);
+    T blinn = viewerDir.dot(reflect);
+    if (blinn < 0) blinn = 0;
     blinn = pow(blinn, obj.specularShininness);
 
     cv::Vec<T, 4> diffuseColor = diffuse * cv::Vec<T, 4>(color.x * obj.color[0], color.y * obj.color[1], color.z * obj.color[2], 1);
     cv::Vec<T, 4> specularColor = obj.color[3] * blinn * cv::Vec<T, 4>(color.x, color.y, color.z, 1);
-
+    
     return diffuseColor + specularColor;
 }
 

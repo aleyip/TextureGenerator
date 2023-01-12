@@ -58,14 +58,18 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, const T r
 	if (ws == 1) {
 		angle[0] = M_PI * ((-2 * u) / (T)size[0] + 1);
 		angle[1] = M_PI * (v / (T)(size[1] - 1) - 0.5);
-		angle[2] = M_PI * (s / (T)(size[2] - 1) - 0.5);
-		angle[3] = M_PI * (t / (T)(size[3] - 1) - 0.5);
+		if (size[2] != 1) angle[2] = M_PI * (s / (T)(size[2] - 1) - 0.5);
+		else angle[2] = 0;
+		if (size[3] != 1) angle[3] = M_PI * (t / (T)(size[3] - 1) - 0.5);
+		else  angle[3] = 0;
 	}
 	else {
 		angle[0] = M_PI * (2. * (n / (T)(ws - 1) - u - 0.5) / size[0] + 1);
 		angle[1] = M_PI * ((v + m / (T)(ws - 1) - 0.5) / (size[1] - 1) - 0.5);
-		angle[2] = M_PI * ((s + k / (T)(ws - 1) - 0.5) / (size[2] - 1) - 0.5);
-		angle[3] = M_PI * ((t + l / (T)(ws - 1) - 0.5) / (size[3] - 1) - 0.5);
+		if (size[2] != 1) angle[2] = M_PI * ((s + k / (T)(ws - 1) - 0.5) / (size[2] - 1) - 0.5);
+		else angle[2] = 0;
+		if (size[3] != 1) angle[3] = M_PI * ((t + l / (T)(ws - 1) - 0.5) / (size[3] - 1) - 0.5);
+		else  angle[3] = 0;
 	}
 
 	T pos[3] = { radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]) };

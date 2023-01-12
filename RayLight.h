@@ -26,6 +26,10 @@ struct vec3 {
 		return vec3<T>(x + n.x, y + n.y, z + n.z);
 	}
 
+	inline vec3<T> operator+=(const vec3<T>& n) {
+		return vec3<T>(x + n.x, y + n.y, z + n.z);
+	}
+
 	inline vec3<T> operator-(const vec3<T>& n) {
 		return vec3<T>(x - n.x, y - n.y, z - n.z);
 	}

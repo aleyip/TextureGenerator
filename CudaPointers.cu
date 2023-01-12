@@ -11,25 +11,51 @@
 
 #include "CudaPointers.h"
 
-template<class T>
-__global__ void PixelReduction_kernel(T* out, const int wsTotal, const int pixelnum){
+template<class T, int n>
+__global__ void DataReduction_kernel(T* out, const int wsTotal, const int pixelnum){
 	size_t index = blockIdx.x * blockDim.x + threadIdx.x;
 	if (index < pixelnum) {
-		T* pixel = out + 4 * index;
-		T sumPixel[] = { 0,0,0,0 };
+		T* pixel = out + n * index;
+		T sumPixel[n];
+		sumPixel[0] = 0;
+#pragma unroll
+		for (int i = 0; i < n; i++)
+			sumPixel[i] = 0;
+		for (int i = 0; i < wsTotal; i++)
+		{
+#pragma unroll
+			for (int i = 0; i < n; i++)
+				sumPixel[i] += pixel[i];
+			pixel += n * pixelnum;
+		}
+		pixel = out + n * index;
+#pragma unroll
+		for(int i = 0; i<n; i++)
+			pixel[i] = sumPixel[i] / wsTotal;
+	}
+}
+
+template<class T>
+__global__ void VectorReduction_kernel(T* out, const int wsTotal, const int pixelnum) {
+	size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+	if (index < pixelnum) {
+		T* pixel = out + 3 * index;
+		T sumPixel[] = { 0,0,0 };
 		for (int i = 0; i < wsTotal; i++)
 		{
 			sumPixel[0] += pixel[0];
 			sumPixel[1] += pixel[1];
 			sumPixel[2] += pixel[2];
-			sumPixel[3] += pixel[3];
-			pixel += 4 * pixelnum;
+			pixel += 3 * pixelnum;
 		}
-		pixel = out + 4 * index;
-		pixel[0] = sumPixel[0] / wsTotal;
-		pixel[1] = sumPixel[1] / wsTotal;
-		pixel[2] = sumPixel[2] / wsTotal;
-		pixel[3] = sumPixel[3] / wsTotal;
+		pixel = out + 3 * index;
+
+		T mod = sumPixel[0] * sumPixel[0] + sumPixel[1] * sumPixel[1] + sumPixel[2] * sumPixel[2];
+		mod = 1 / sqrt(mod);
+
+		pixel[0] = sumPixel[0] *= mod;
+		pixel[1] = sumPixel[1] *= mod;
+		pixel[2] = sumPixel[2] *= mod;
 	}
 }
 
@@ -112,80 +138,154 @@ ErrorAllocate:
 }
 
 template<class T>
-void CudaPointers<T>::uploadRayList(std::vector<RayLight<T>> rayList) {
+void CudaPointers<T>::uploadRayList(RayLight<T>* rayList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data from host to device memory
-	cudaStatus = cudaMemcpy(d_rayList, rayList.data(), sizeof(RayLight<T>) * rayList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_rayList, rayList, sizeof(RayLight<T>) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_rayList Host to Device!\n");
 	}
 }
 
 template<class T>
-void CudaPointers<T>::downloadRayList(std::vector<RayLight<T>>& rayList) {
+void CudaPointers<T>::downloadRayList(RayLight<T>* rayList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(rayList.data(), d_rayList, sizeof(RayLight<T>) * rayList.size(), cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(rayList, d_rayList, sizeof(RayLight<T>) * length, cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_rayList Device to Host!\n");
 	}
 }
 
+template <class T>
+cudaError_t NormalReduction_wrapper(int length, int wsTotal, CudaPointers<T>& cp) {
+	cudaError_t cudaStatus;
+
+	// Executing kernel 
+	{
+		dim3 threadsPerBlock(1024);
+		dim3 blocksPerGrid(ceil(double(length) / double(threadsPerBlock.x)));
+		VectorReduction_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_normalList, wsTotal, length);
+	}
+
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "Normal Reduction kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		goto ErrorReduction;
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching Normal Reduction Kernel!\n", cudaStatus);
+		goto ErrorReduction;
+	}
+ErrorReduction:
+	return cudaStatus;
+}
+
 template<class T>
-void CudaPointers<T>::uploadNormalList(std::vector<vec3<T>> normalList) {
+void CudaPointers<T>::normalReduction(int wsTotal, int length) {
+	cudaError_t cudaStatus = NormalReduction_wrapper<T>(length, wsTotal, *this);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "Normal Reduction Failed\n");
+	}
+}
+
+template<class T>
+void CudaPointers<T>::uploadNormalList(vec3<T>* normalList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data from host to device memory
-	cudaStatus = cudaMemcpy(d_normalList, normalList.data(), sizeof(vec3<T>) * normalList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_normalList, normalList, sizeof(vec3<T>) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_normal Host to Device!\n");
 	}
 }
 
 template<class T>
-void CudaPointers<T>::downloadNormalList(std::vector<vec3<T>>& normalList) {
+void CudaPointers<T>::downloadNormalList(vec3<T>* normalList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(normalList.data(), d_normalList, sizeof(vec3<T>) * normalList.size(), cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(normalList, d_normalList, sizeof(vec3<T>) * length, cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_normal Device to Host!\n");
 	}
 }
 
 template<class T>
-void CudaPointers<T>::uploadCollisionList(std::vector<vec3<T>> collisionList) {
+void CudaPointers<T>::uploadCollisionList(vec3<T>* collisionList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data from host to device memory
-	cudaStatus = cudaMemcpy(d_collisionList, collisionList.data(), sizeof(vec3<T>) * collisionList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_collisionList, collisionList, sizeof(vec3<T>) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_collision Host to Device!\n");
 	}
 }
 
 template<class T>
-void CudaPointers<T>::downloadCollisionList(std::vector<vec3<T>>& collisionList) {
+void CudaPointers<T>::downloadCollisionList(vec3<T>* collisionList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(collisionList.data(), d_collisionList, sizeof(vec3<T>) * collisionList.size(), cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(collisionList, d_collisionList, sizeof(vec3<T>) * length , cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_collision Device to Host!\n");
 	}
 }
 
+template <class T>
+cudaError_t DistReduction_wrapper(int length, int wsTotal, CudaPointers<T>& cp) {
+	cudaError_t cudaStatus;
+
+	// Executing kernel 
+	{
+		dim3 threadsPerBlock(1024);
+		dim3 blocksPerGrid(ceil(double(length) / double(threadsPerBlock.x)));
+		DataReduction_kernel<T, 1> << < blocksPerGrid, threadsPerBlock >> > (cp.d_distList, wsTotal, length);
+	}
+
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "Dist Reduction kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		goto ErrorReduction;
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching Dist Reduction Kernel!\n", cudaStatus);
+		goto ErrorReduction;
+	}
+ErrorReduction:
+	return cudaStatus;
+}
+
 template<class T>
-void CudaPointers<T>::uploadDistList(std::vector<T> distList) {
+void CudaPointers<T>::distReduction(int wsTotal, int length) {
+	cudaError_t cudaStatus = DistReduction_wrapper<T>(length, wsTotal, *this);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "Dist Reduction Failed\n");
+	}
+}
+
+template<class T>
+void CudaPointers<T>::uploadDistList(T* distList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data from host to device memory
-	cudaStatus = cudaMemcpy(d_distList, distList.data(), sizeof(T) * distList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_distList, distList, sizeof(T) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_dist Host to Device!\n");
 	}
 }
 
 template<class T>
-void CudaPointers<T>::downloadDistList(std::vector<T>& distList) {
+void CudaPointers<T>::downloadDistList(T* distList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(distList.data(), d_distList, sizeof(T) * distList.size(), cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(distList, d_distList, sizeof(T) * length, cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_dist Device to Host!\n");
 	}
@@ -198,20 +298,20 @@ void CudaPointers<T>::setDistList(T value, int sizeList) {
 }
 
 template<class T>
-void CudaPointers<T>::uploadHitObjectList(std::vector<int8_t> hitobjectList) {
+void CudaPointers<T>::uploadHitObjectList(int8_t *hitobjectList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data from host to device memory
-	cudaStatus = cudaMemcpy(d_hitobjectList, hitobjectList.data(), sizeof(int8_t) * hitobjectList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_hitobjectList, hitobjectList, sizeof(int8_t) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_dist Host to Device!\n");
 	}
 }
 
 template<class T>
-void CudaPointers<T>::downloadHitObjectList(std::vector<int8_t>& hitobjectList) {
+void CudaPointers<T>::downloadHitObjectList(int8_t* hitobjectList, int length) {
 	cudaError_t cudaStatus;
 	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(hitobjectList.data(), d_hitobjectList, sizeof(int8_t) * hitobjectList.size(), cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(hitobjectList, d_hitobjectList, sizeof(int8_t) * length, cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_hitobject Device to Host!\n");
 	}
@@ -224,27 +324,27 @@ void CudaPointers<T>::setHitObjectList(int8_t value, int sizeList) {
 }
 
 template<class T>
-void CudaPointers<T>::uploadObjectColorProp(std::vector<cv::Vec<T, 4>> colorList, std::vector<uint8_t> shinyList) {
+void CudaPointers<T>::uploadObjectColorProp(cv::Vec<T, 4>* colorList, uint8_t* shinyList, int length) {
 	cudaError_t cudaStatus;
 
-	cudaStatus = cudaMalloc((void**)&d_objcolorList, colorList.size() * sizeof(cv::Vec<T, 4>));
+	cudaStatus = cudaMalloc((void**)&d_objcolorList, sizeof(cv::Vec<T, 4>) * length);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed in d_objcolor!\n");
 		return;
 	}
 
-	cudaStatus = cudaMalloc((void**)&d_objShinList, shinyList.size() * sizeof(uint8_t));
+	cudaStatus = cudaMalloc((void**)&d_objShinList, sizeof(uint8_t) * length);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed in d_objShin!\n");
 		return;
 	}
 
-	cudaStatus = cudaMemcpy(d_objcolorList, colorList.data(), sizeof(cv::Vec<T, 4>) * colorList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_objcolorList, colorList, sizeof(cv::Vec<T, 4>) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_objcolor Host to Device!\n");
 	}
 
-	cudaStatus = cudaMemcpy(d_objShinList, shinyList.data(), sizeof(uint8_t) * shinyList.size(), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(d_objShinList, shinyList, sizeof(uint8_t) * length, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_objShin Host to Device!\n");
 	}
@@ -258,7 +358,7 @@ cudaError_t PixelReduction_wrapper(int length, int wsTotal, CudaPointers<T>& cp)
 	{
 		dim3 threadsPerBlock(1024);
 		dim3 blocksPerGrid(ceil(double(length) / double(threadsPerBlock.x)));
-		PixelReduction_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_colorList, wsTotal, length);
+		DataReduction_kernel<T,4> << < blocksPerGrid, threadsPerBlock >> > (cp.d_colorList, wsTotal, length);
 	}
 
 	// Check for any errors launching the kernel

@@ -138,7 +138,7 @@ void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T 
 			objColorList[i] = obj[i]->color;
 			objShinyList[i] = obj[i]->specularShininness;
 		}
-		cp.uploadObjectColorProp(objColorList, objShinyList);
+		cp.uploadObjectColorProp(objColorList.data(), objShinyList.data(), NUMOBJ);
 	}
 	cp.setHitObjectList(-1, img.total());
 	cp.setDistList(10e10, img.total());
@@ -160,7 +160,7 @@ void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T 
 
 			rayList[img.cols * r + c] = RayLightT(viewerPos, vD);
 		}
-	cp.uploadRayList(rayList);
+	cp.uploadRayList(rayList.data(), img.total());
 
 	for (int j = 0; j < NUMOBJ; j++)
 		obj[j]->CheckCollisionCuda(cp, img.total(), j);
@@ -261,7 +261,7 @@ void generateTexture(ObjectT** obj, LightT** light) {
 									dist = 10e10;
 									for (int i = 0; i < NUMOBJ; i++)
 									{
-										d = obj[i]->CheckCollision(ray, collision, normal);
+										d = obj[i]->CheckCollision(ray, collision_out, normal_out);
 										if (d < dist && d >= 0) {
 											dist = d;
 											normal = normal_out;
@@ -272,9 +272,9 @@ void generateTexture(ObjectT** obj, LightT** light) {
 									if (objsel != -1) {
 										color = LightT::setAmbientLight(*obj[objsel], ambientPower);
 										for (int i = 0; i < NUMLIGHT; i++)
-											color += light[i]->lightEffect(*obj[objsel], collision, normal, ray.origin);
+											color += light[i]->lightEffect(*obj[objsel], collision, normal, ray.direction);
+										sumPixel += color;
 									}
-									sumPixel += color;
 								}
 					tex(u, v, s, t) = sumPixel * denom;
 				}
@@ -295,7 +295,7 @@ void generateTexture(ObjectT** obj, LightT** light) {
 	cv::Mat img = cv::Mat(256, 512, CV_64FC4);
 	for (int u = 0; u < 512; u++)
 		for (int v = 0; v < 256; v++)
-			img.at<cv::Vec4d>(v, u) = tex(u, v, 16, 16);
+			img.at<cv::Vec4d>(v, u) = tex(u, v, TEXS / 2, TEXT / 2);
 	img.convertTo(img, CV_8UC4, 255);
 	cv::imshow("Teste", img);
 	cv::imwrite("D:/testeTexGen.png", img);
@@ -337,7 +337,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light) {
 			objColorList[i] = obj[i]->color;
 			objShinyList[i] = obj[i]->specularShininness;
 		}
-		cp.uploadObjectColorProp(objColorList, objShinyList);
+		cp.uploadObjectColorProp(objColorList.data(), objShinyList.data(), NUMOBJ);
 	}
 	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
 
@@ -392,7 +392,6 @@ void generateTextureCuda(ObjectT** obj, LightT** light) {
 			//img.at<cv::Vec4d>(v, u) = tex(u, v, 0, 0);
 			img.at<cv::Vec4d>(v, u) = tex(u, v, TEXS / 2, TEXT / 2);
 	img.convertTo(img, CV_8UC4, 255);
-	cv::imwrite("D:/testeGen.png", img);
 	cv::imshow("Teste", img);
 	cv::imwrite("D:/testeTexGenCuda.png", img);
 	cv::waitKey(0);
@@ -400,11 +399,224 @@ void generateTextureCuda(ObjectT** obj, LightT** light) {
 	{
 		auto start = std::chrono::steady_clock::now();
 		tex.compileToUnity("D:\\testeGeneratorCuda.asset");
+		//tex.compileToVideo("asdas");
 		auto end = std::chrono::steady_clock::now();
 		std::cout << "Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
 			<< " ms" << std::endl;
 	}
+}
+
+void generateMaps(ObjectT** obj) {
+	const int ws = WINDOW_SIZE * 2 + 1;
+	const int wsTotal = ws * ws * ws * ws;
+
+	const int totalSize = TEXU * TEXV;
+
+	int size[] = { TEXU,TEXV };
+
+	//Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+	cv::Mat texture = cv::Mat(TEXU, TEXV, CV_64FC4);
+	cv::Mat normal = cv::Mat(TEXU, TEXV, CV_64FC3);
+	cv::Mat height = cv::Mat(TEXU, TEXV, CV_64FC1);
+
+	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
+	double halfinc[4];
+	if (WINDOW_SIZE == 0) {
+		halfinc[0] = 0;
+		halfinc[1] = 0;
+		halfinc[2] = 0;
+		halfinc[3] = 0;
+	}
+	else {
+		halfinc[0] = inc[0] / (2. * WINDOW_SIZE);
+		halfinc[1] = inc[1] / (2. * WINDOW_SIZE);
+		halfinc[2] = inc[2] / (2. * WINDOW_SIZE);
+		halfinc[3] = inc[3] / (2. * WINDOW_SIZE);
+	}
+
+	typeT radius = 3.5;
+
+	typeT denom = 1. / wsTotal;
+	std::cout << denom << std::endl;
+
+	std::cout << "Compile Map" << std::endl;
+#pragma omp parallel for collapse(2)
+			for (int v = 0; v < size[1]; v++) {
+				for (int u = 0; u < size[0]; u++)
+				{
+					double angleBase[] = { -(inc[0] * u - M_PI), inc[1] * v - M_PI_2};
+
+					cv::Vec<typeT, 4> sumPixel = cv::Vec<typeT, 4>(0, 0, 0, 0);
+					vec3T sumNormal = vec3T(0,0,0);
+					typeT sumDist = 0;
+					cv::Vec<typeT, 4> color;
+					vec3T normal_out, normal_vec, collision_out, collision;
+					int objsel;
+					typeT dist;
+					double d;
+
+					//#pragma omp parallel for collapse(4)
+					for (int n = -WINDOW_SIZE; n <= WINDOW_SIZE; n++)
+						for (int m = -WINDOW_SIZE; m <= WINDOW_SIZE; m++)
+							for (int l = -WINDOW_SIZE; l <= WINDOW_SIZE; l++)
+								for (int k = -WINDOW_SIZE; k <= WINDOW_SIZE; k++)
+								{
+									typeT angle[] = { angleBase[0] + n * halfinc[0], angleBase[1] + m * halfinc[1]};
+
+									vec3T pos = vec3T(radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]));
+
+									vec3T vD(pos);
+									vD.normalize();
+									vD = vD * (-1);
+									RayLightT ray = RayLightT(pos, vD);
+									vec3T collision, normal;
+
+									//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
+
+									color = cv::Vec<typeT, 4>(0, 0, 0, 0);
+									objsel = -1;
+									dist = 10e10;
+									for (int i = 0; i < NUMOBJ; i++)
+									{
+										d = obj[i]->CheckCollision(ray, collision_out, normal_out);
+										if (d < dist && d >= 0) {
+											dist = d;
+											normal_vec = normal_out;
+											objsel = i;
+										}
+									}
+									if (objsel != -1) {
+										color = LightT::setAmbientLight(*obj[objsel], 1);
+										sumPixel += color;
+										sumNormal += normal_vec;
+										sumDist += dist;
+									}
+								}
+					texture.at<cv::Vec<typeT, 4>>(u, v) = sumPixel * denom;
+					sumNormal.normalize();
+					normal.at<cv::Vec<typeT, 3>>(u, v) = cv::Vec<typeT, 3>(normal_vec.x, normal_vec.y,normal_vec.z);
+					height.at<typeT>(u, v) = sumDist * denom;
+				}
+	}
+
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+	cv::transpose(img, img);
+	cv::imshow("Teste", img);
+	cv::imwrite("D:/testeTexMap.png", img);
+
+	normal.convertTo(img, CV_8UC3, 127, 127);
+	cv::transpose(img, img);
+	cv::imwrite("D:/testeNormalMap.png", img);
+
+	height.convertTo(img, CV_8UC1, -127 / (2 * radius), 127);
+	cv::transpose(img, img);
+	cv::imwrite("D:/testeHeightMap.png", img);
+	cv::waitKey(0);
+}
+
+void generateMapsCuda(ObjectT** obj) {
+	const int ws = WINDOW_SIZE * 2 + 1;
+	const int wsTotal = ws * ws * ws * ws;
+
+	const int bufferSize = BUFFERSIZE / wsTotal;
+	const int totalSize = TEXU * TEXV;
+
+	int size[] = { TEXU,TEXV };
+
+
+	//Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+	cv::Mat texture = cv::Mat(TEXU, TEXV, CV_64FC4);
+	cv::Mat normal = cv::Mat(TEXU, TEXV, CV_64FC3);
+	cv::Mat height = cv::Mat(TEXU, TEXV, CV_64FC1);
+
+
+	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
+
+	typeT radius = 3.5;
+
+	typeT denom = 1. / wsTotal;
+	std::cout << "Denominador: " << denom << std::endl;
+
+	CudaPointersT cp;
+	cp.allocate(bufferSize * wsTotal, TEXU, TEXV, 1, 1);
+	{
+		std::vector <cv::Vec<typeT, 4>> objColorList(NUMOBJ);
+		std::vector <uint8_t> objShinyList(NUMOBJ);
+		for (int i = 0; i < NUMOBJ; i++) {
+			objColorList[i] = obj[i]->color;
+			objShinyList[i] = obj[i]->specularShininness;
+		}
+		cp.uploadObjectColorProp(objColorList.data(), objShinyList.data(), NUMOBJ);
+	}
+	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
+
+	std::cout << "Compile Texture" << std::endl;
+	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+	int length = bufferSize;
+	if (totalSize < bufferSize)
+		length = totalSize - countLoop;
+	int bufferTotal;
+	cv::Vec<typeT, 4>* texturePixel = (cv::Vec<typeT, 4>*)texture.data;
+	vec3T* normalPixel = (vec3T *)normal.data;
+	typeT* heightPixel = (typeT *)height.data;
+
+	while (countLoop < totalSize)
+	{
+		auto start = std::chrono::steady_clock::now();
+
+		bufferTotal = length * wsTotal;
+
+		std::cout << countLoop << "/" << totalSize << std::endl;
+
+		Texture4D(TEXU, TEXV, 1, 1).RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
+
+		cp.setHitObjectList(-1, bufferTotal);
+		cp.setDistList(10e10, bufferTotal);
+		for (int o = 0; o < NUMOBJ; o++)
+		{
+			obj[o]->CheckCollisionCuda(cp, bufferTotal, o);
+		}
+		LightT::setAmbientLightCUDA(cp, 1, bufferTotal);
+
+		cp.pixelReduction(wsTotal, length);
+		cp.downloadPixelColor(texturePixel, length);
+
+		cp.normalReduction(wsTotal, length);
+		cp.downloadNormalList(normalPixel, length);
+
+		cp.distReduction(wsTotal, length);
+		cp.downloadDistList(heightPixel, length);
+
+		auto end = std::chrono::steady_clock::now();
+		std::cout << " Compare Elapsed time in milliseconds: "
+			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+			<< " ms" << std::endl;
+		//return;
+		texturePixel += length;
+		normalPixel += length;
+		heightPixel += length;
+		countLoop += length;
+		if (totalSize - countLoop < bufferSize)
+			length = totalSize - countLoop;
+	}
+	cp.free();
+
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+	cv::transpose(img, img);
+	cv::imshow("Teste", img);
+	cv::imwrite("D:/testeTexMapCuda.png", img);
+
+	normal.convertTo(img, CV_8UC3, 127, 127);
+	cv::transpose(img, img);
+	cv::imwrite("D:/testeNormalMapCuda.png", img);
+
+	height.convertTo(img, CV_8UC1, -127 / (2 * radius), 127);
+	cv::transpose(img, img);
+	cv::imwrite("D:/testeHeightMapCuda.png", img);
+	cv::waitKey(0);
 }
 
 int main()
@@ -425,6 +637,8 @@ int main()
 	generateTextureCuda(obj, light);
 	//generateViewPort(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
 	//generateViewPortCuda(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90);
+	//generateMaps(obj);
+	//generateMapsCuda(obj);
 
 	return 0;
 }
