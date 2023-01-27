@@ -15,5 +15,6 @@ public:
 
     cv::Vec<T, 4> lightEffect(Object<T>& obj, vec3<T>& collision, vec3<T>& normal, vec3<T>& viewerPos);
     void addLightEffectsCUDA(CudaPointers<T>& cp, int count);
+    void Report();
 };
 

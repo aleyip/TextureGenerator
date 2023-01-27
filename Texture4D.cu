@@ -206,6 +206,64 @@ void Texture4D<T>::compileToUnity(std::string s) {
 }
 
 template <class T>
+void Texture4D<T>::compileToVideo(std::string s) {
+	cv::VideoWriter video("outcpp.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 10, cv::Size(usize, vsize));
+	if (!video.isOpened())
+	{
+		std::cout << "Could not open the output video for write: " << std::endl;
+		return;
+	}
+
+	//cv::VideoWriter video("outcpp.webm", cv::VideoWriter::fourcc('V', 'P', '9', '0'), 10, cv::Size(usize, vsize));
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+	cv::Mat frame = cv::Mat(usize, vsize, CV_8UC4);
+
+	for (int t = 0; t < tsize; t++)
+		for (int s = 0; s < ssize; s++)
+		{
+
+			frame = cv::Mat(usize, vsize, CV_8UC3, cv::Scalar(s, t, 0));
+			std::cout << s << " " << t << std::endl;
+			//for (int v = 0; v < vsize; v++)
+			//	for (int u = 0; u < usize; u++)
+			//	{
+			//	}
+			video << frame;
+		}
+	//video.release();
+
+	// Closes all the frames
+	//cv::destroyAllWindows();
+}
+
+template <class T>
+void Texture4D<T>::compileToImage(std::string s) {
+	cv::Mat out = cv::Mat(vsize * tsize, usize * ssize, CV_8UC4);
+
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+
+	std::cout << "Inicio Gerando Imagem da Textura" << std::endl;
+
+#pragma omp parallel for collapse(4)
+	for (int t = 0; t < tsize; t++)
+		for (int s = 0; s < ssize; s++)
+			for (int v = 0; v < vsize; v++)
+				for (int u = 0; u < usize; u++)
+				{
+					out.at<cv::Vec4b>(v + vsize * t,u + usize * s) = img.at<cv::Vec4b>(getCoord(u, v, s, t));
+				}
+
+	std::string name;
+	size_t indexfirst = s.find_last_of('\\') + 1;
+	size_t indexlast = s.find_last_of('.');
+	name = s.substr(indexfirst, indexlast - indexfirst);
+	std::cout << "Gerando arquivo: " << name << std::endl;
+	cv::imwrite(s, out);
+}
+
+template <class T>
 void Texture4D<T>::RayLightGeneratorCuda(int start, int length, T radius, int ws, int wsTotal, CudaPointers<T> &cp) {
 	int size[] = { usize, vsize, ssize, tsize };
 

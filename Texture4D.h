@@ -41,6 +41,10 @@ public:
 
 	void compileToUnity(std::string s);
 
+	void compileToVideo(std::string s);
+
+	void compileToImage(std::string s);
+
 	void RayLightGeneratorCuda(int start, int length, T radius, int ws, int wsTotal, CudaPointers<T>& cp);
 };
 

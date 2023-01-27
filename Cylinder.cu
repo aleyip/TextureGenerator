@@ -89,7 +89,7 @@ __global__ void CylinderCollisor_kernel(T* out, T* collision, T* normal, int8_t*
 
             }
         }
-        if (dist < out[index]) {
+        if (dist < out[index] && dist >= 0) {
             out[index] = dist;
             objHit[index] = objIndex;
             normal[3 * index] = cz * cy * aux[0] + (cz * sy * sx - sz * cx) * aux[1] + (cz * sy * cx + sz * sx) * aux[2];
@@ -227,6 +227,12 @@ T Cylinder<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& norm
         -sy * normal.x + (cy * sx) * normal.y + (cy * cx) * normal.z);
 
     return dist;
+}
+
+template <class T>
+void Cylinder<T>::Report() {
+    printf("Cylinder: Position: %.2f %.2f %.2f Rotation: %.2f %.2f %.2f Color: %.2f %.2f %.2f Diameter: %.2f Height: %.2f\n", position.x, position.y, position.z, rotation.x,
+        rotation.y, rotation.z, color[0], color[1], color[2], diameter, height);
 }
 
 template class Cylinder<typeT>;

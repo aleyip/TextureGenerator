@@ -14,4 +14,5 @@ public:
 
 	T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
 	void CheckCollisionCuda(CudaPointers<T>& cp, int count, int8_t objindex);
+	void Report();
 };

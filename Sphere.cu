@@ -42,7 +42,7 @@ __global__ void SphereCollisor_kernel(T* out, T* collision, T* normal, int8_t* o
             dist = (-b - sqrt(delta)) / (2. * a);
         }
 
-        if (dist < out[index]) {
+        if (dist < out[index] && dist >= 0) {
             T vec[3];
             vec[0] = origin[0] + dist * dir[0];
             vec[1] = origin[1] + dist * dir[1];
@@ -141,6 +141,12 @@ T Sphere<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal
     normal.normalize();
 
     return dist;
+}
+
+template <class T>
+void Sphere<T>::Report() {
+    printf("Sphere: Position: %.2f %.2f %.2f Rotation: %.2f %.2f %.2f Color: %.2f %.2f %.2f Diameter: %.2f\n", position.x, position.y, position.z, rotation.x,
+        rotation.y, rotation.z, color[0], color[1], color[2], diameter);
 }
 
 template class Sphere<typeT>;

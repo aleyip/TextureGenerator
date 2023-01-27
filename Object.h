@@ -30,6 +30,10 @@ public:
 
 	virtual T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
 	virtual void CheckCollisionCuda(CudaPointers<T>& cp, int count, int8_t objindex);
+	void Report() {
+		printf("Object: Position: %.2f %.2f %.2f Rotation: %.2f %.2f %.2f Color: %.2f %.2f %.2f\n", position.x, position.y, position.z, rotation.x,
+			rotation.y, rotation.z, color[0], color[1], color[2]);
+	}
 };
 
 #include "Object.cu"

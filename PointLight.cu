@@ -173,4 +173,9 @@ cv::Vec<T, 4> PointLight<T>::lightEffect(Object<T>& obj, vec3<T>& collision, vec
     return diffuseColor + specularColor;
 }
 
+template <class T>
+void PointLight<T>::Report() {
+    printf("Point Light: Color: %.2f %.2f %.2f Position: %.2f %.2f %.2f\n", color.x, color.y, color.z, position.x, position.y, position.z);
+}
+
 template class PointLight<typeT>;

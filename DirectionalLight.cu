@@ -62,8 +62,9 @@ __global__ void addLightEffects_kernel(T* out, T* collision, T* normal, int8_t* 
             //aux_vec[2] *= aux_db;
 
             //Viewer Dir
-            //T aux_vec2[] = { rayLight[0] - collision_ptr[0], rayLight[1] - collision_ptr[1], rayLight[2] - collision_ptr[2] };
-            T aux_vec2[] = { -rayLight[3], -rayLight[4], -rayLight[5] };
+            T aux_vec2[] = { rayLight[0] - collision_ptr[0], rayLight[1] - collision_ptr[1], rayLight[2] - collision_ptr[2] };
+            //T aux_vec2[] = { -rayLight[3], -rayLight[4], -rayLight[5] };
+            //T aux_vec2[] = { rayLight[0], rayLight[1], rayLight[2] };
             aux_db = aux_vec2[0] * aux_vec2[0] + aux_vec2[1] * aux_vec2[1] + aux_vec2[2] * aux_vec2[2];
             aux_db = 1. / sqrt(aux_db);
             aux_vec2[0] *= aux_db;
@@ -151,20 +152,25 @@ void DirectionalLight<T>::addLightEffectsCUDA(CudaPointers<T>& cp, int count) {
 
 template <class T>
 cv::Vec<T, 4> DirectionalLight<T>::lightEffect(Object<T>& obj, vec3<T>& collision, vec3<T>& normal, vec3<T>& viewerPos) {
-    direction.normalize();
+    vec3<T> dir = vec3<T>(direction);
+    dir.normalize();
     normal.normalize();
 
-    vec3<T> reflect = direction * (-1) - normal * (-2.) * direction.dot(normal);
+    //vec3<T> reflect = direction * (-1) - normal * (-2.) * direction.dot(normal);
     vec3<T> viewerDir = viewerPos - collision;
+    //vec3<T> viewerDir = viewerPos * -1;
     viewerDir.normalize();
 
-    vec3<T> halfAngle = viewerDir + direction;
+    vec3<T> halfAngle = viewerDir + dir;
     halfAngle.normalize();
 
-    T diffuse = direction.dot(normal);
+    T diffuse = dir.dot(normal);
     if (diffuse < 0) diffuse = 0;
 
-    T blinn = viewerDir.dot(reflect);
+    //T blinn = viewerDir.dot(reflect);
+    vec3<T> half = viewerDir + dir;
+    half.normalize();
+    T blinn = normal.dot(half);
     if (blinn < 0) blinn = 0;
     blinn = pow(blinn, obj.specularShininness);
 
@@ -172,6 +178,11 @@ cv::Vec<T, 4> DirectionalLight<T>::lightEffect(Object<T>& obj, vec3<T>& collisio
     cv::Vec<T, 4> specularColor = obj.color[3] * blinn * cv::Vec<T, 4>(color.x, color.y, color.z, 1);
     
     return diffuseColor + specularColor;
+}
+
+template <class T>
+void DirectionalLight<T>::Report() {
+    printf("Directional Light: Color: %.2f %.2f %.2f Direction: %.2f %.2f %.2f\n", color.x, color.y, color.z, direction.x, direction.y, direction.z);
 }
 
 template class DirectionalLight<typeT>;

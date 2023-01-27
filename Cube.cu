@@ -289,4 +289,10 @@ T Cube<T>::CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal) 
     return dist;
 }
 
+template <class T>
+void Cube<T>::Report() {
+    printf("Cube: Position: %.2f %.2f %.2f Rotation: %.2f %.2f %.2f Color: %.2f %.2f %.2f Width: %.2f Height: %.2f Depth: %.2f\n", position.x, position.y, position.z, rotation.x,
+        rotation.y, rotation.z, color[0], color[1], color[2], width, height, depth);
+}
+
 template class Cube<typeT>;
