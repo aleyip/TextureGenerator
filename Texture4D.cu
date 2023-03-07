@@ -1,5 +1,6 @@
 #include "Texture4D.h"
 #include "Object.h"
+#include "defines.h"
 
 #include <stdio.h>
 #include <iostream>
@@ -35,9 +36,10 @@ __device__ void normalize(T* vec) {
 }
 
 template<class T>
-__global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius, int ws, int wsTotal) {
+__global__ void raylightgenerator_kernel(T* out, int start, int* size, const T radius, const int wsTotal) {
 	int globalIndex = start + blockIdx.x;
 	int u, v, s, t;
+	int ws = gridDim.y;
 	t = globalIndex % size[3];
 	u = globalIndex / size[3];
 	s = u % size[2];
@@ -49,27 +51,32 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius,
 	int l = threadIdx.y;
 	int m = threadIdx.z;
 	int n = blockIdx.y;
-	int index = 6 * (blockIdx.x * wsTotal + ws * (ws * (ws * n + m) + l) + k);
+
+	T* ray_ptr = out + 6 * (blockIdx.x + (ws * (ws * (ws * n + m) + l) + k) * gridDim.x);
 
 	T angle[4];
 	if (ws == 1) {
 		angle[0] = M_PI * ((-2 * u) / (T)size[0] + 1);
 		angle[1] = M_PI * (v / (T)(size[1] - 1) - 0.5);
-		angle[2] = M_PI * (s / (T)(size[2] - 1) - 0.5);
-		angle[3] = M_PI * (t / (T)(size[3] - 1) - 0.5);
+		if (size[2] != 1) angle[2] = M_PI * (s / (T)(size[2] - 1) - 0.5);
+		else angle[2] = 0;
+		if (size[3] != 1) angle[3] = M_PI * (t / (T)(size[3] - 1) - 0.5);
+		else  angle[3] = 0;
 	}
 	else {
 		angle[0] = M_PI * (2. * (n / (T)(ws - 1) - u - 0.5) / size[0] + 1);
 		angle[1] = M_PI * ((v + m / (T)(ws - 1) - 0.5) / (size[1] - 1) - 0.5);
-		angle[2] = M_PI * ((s + k / (T)(ws - 1) - 0.5) / (size[2] - 1) - 0.5);
-		angle[3] = M_PI * ((t + l / (T)(ws - 1) - 0.5) / (size[3] - 1) - 0.5);
+		if (size[2] != 1) angle[2] = M_PI * ((s + k / (T)(ws - 1) - 0.5) / (size[2] - 1) - 0.5);
+		else angle[2] = 0;
+		if (size[3] != 1) angle[3] = M_PI * ((t + l / (T)(ws - 1) - 0.5) / (size[3] - 1) - 0.5);
+		else  angle[3] = 0;
 	}
 
 	T pos[3] = { radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]) };
 	T dir[3] = { sin(angle[2]) * cos(angle[3]), sin(angle[3]), cos(angle[2]) * cos(angle[3]) };
-	out[index] = pos[0];
-	out[index + 1] = pos[1];
-	out[index + 2] = pos[2];
+	ray_ptr[0] = pos[0];
+	ray_ptr[1] = pos[1];
+	ray_ptr[2] = pos[2];
 
 	normalize<T>(pos);
 	T versorRight[] = { -pos[2], 0., pos[0] };
@@ -83,9 +90,9 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, T radius,
 		-(versorRight[2] * dir[0] + versorUp[2] * dir[1] + pos[2] * dir[2])
 	};
 
-	out[index + 3] = vD[0];
-	out[index + 4] = vD[1];
-	out[index + 5] = vD[2];
+	ray_ptr[3] = vD[0];
+	ray_ptr[4] = vD[1];
+	ray_ptr[5] = vD[2];
 }
 
 template<class T>
@@ -98,7 +105,7 @@ cudaError_t RayLightGenerator_wrapper(int start, int length, int* size, T radius
 		dim3 threadsPerBlock(ws, ws, ws);
 		dim3 blocksPerGrid(length, ws);
 		//std::cout << threadsPerBlock << " " << blocksPerGrid << std::endl;
-		raylightgenerator_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, start, cp.d_size, radius, ws, wsTotal);
+		raylightgenerator_kernel<T> << < blocksPerGrid, threadsPerBlock >> > (cp.d_rayList, start, cp.d_size, radius, wsTotal);
 	}
 
 	// Check for any errors launching the kernel
@@ -199,6 +206,67 @@ void Texture4D<T>::compileToUnity(std::string s) {
 }
 
 template <class T>
+void Texture4D<T>::compileToVideo(std::string s) {
+	cv::VideoWriter video("outcpp.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 10, cv::Size(usize, vsize));
+	if (!video.isOpened())
+	{
+		std::cout << "Could not open the output video for write: " << std::endl;
+		return;
+	}
+
+	//cv::VideoWriter video("outcpp.webm", cv::VideoWriter::fourcc('V', 'P', '9', '0'), 10, cv::Size(usize, vsize));
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+	cv::Mat frame = cv::Mat(usize, vsize, CV_8UC4);
+
+	for (int t = 0; t < tsize; t++)
+		for (int s = 0; s < ssize; s++)
+		{
+
+			frame = cv::Mat(usize, vsize, CV_8UC3, cv::Scalar(s, t, 0));
+			std::cout << s << " " << t << std::endl;
+			//for (int v = 0; v < vsize; v++)
+			//	for (int u = 0; u < usize; u++)
+			//	{
+			//	}
+			video << frame;
+		}
+	//video.release();
+
+	// Closes all the frames
+	//cv::destroyAllWindows();
+}
+
+template <class T>
+void Texture4D<T>::compileToImage(std::string s) {
+	cv::Mat out = cv::Mat(vsize * tsize, usize * ssize, CV_8UC4);
+
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+
+	std::cout << "Inicio Gerando Imagem da Textura" << std::endl;
+
+#pragma omp parallel for collapse(4)
+	for (int t = 0; t < tsize; t++)
+		for (int s = 0; s < ssize; s++)
+			for (int v = 0; v < vsize; v++)
+				for (int u = 0; u < usize; u++)
+				{
+					out.at<cv::Vec4b>(v + vsize * t,u + usize * s) = img.at<cv::Vec4b>(getCoord(u, v, s, t));
+				}
+
+	std::string name;
+	size_t indexfirst = s.find_last_of('\\') + 1;
+	size_t indexlast = s.find_last_of('.');
+	name = s.substr(indexfirst, indexlast - indexfirst);
+	std::cout << "Gerando arquivo: " << name << std::endl;
+	cv::imwrite(s, out);
+
+	img.release();
+	out.release();
+}
+
+template <class T>
 void Texture4D<T>::RayLightGeneratorCuda(int start, int length, T radius, int ws, int wsTotal, CudaPointers<T> &cp) {
 	int size[] = { usize, vsize, ssize, tsize };
 
@@ -208,5 +276,4 @@ void Texture4D<T>::RayLightGeneratorCuda(int start, int length, T radius, int ws
 	}
 }
 
-template class Texture4D<float>;
-template class Texture4D<double>;
+template class Texture4D<typeT>;

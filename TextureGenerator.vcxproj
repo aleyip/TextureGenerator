@@ -159,7 +159,11 @@
     <ClInclude Include="Cube.h" />
     <ClInclude Include="CudaPointers.h" />
     <ClInclude Include="Cylinder.h" />
+    <ClInclude Include="defines.h" />
+    <ClInclude Include="DirectionalLight.h" />
+    <ClInclude Include="Light.h" />
     <ClInclude Include="Object.h" />
+    <ClInclude Include="PointLight.h" />
     <ClInclude Include="RayLight.h" />
     <ClInclude Include="Sphere.h" />
     <ClInclude Include="Texture4D.h" />
@@ -171,6 +175,9 @@
     <CudaCompile Include="Cube.cu" />
     <CudaCompile Include="CudaPointers.cu" />
     <CudaCompile Include="Cylinder.cu" />
+    <CudaCompile Include="DirectionalLight.cu" />
+    <CudaCompile Include="Light.cu" />
+    <CudaCompile Include="PointLight.cu" />
     <CudaCompile Include="Sphere.cu" />
     <CudaCompile Include="Texture4D.cu" />
   </ItemGroup>

@@ -13,103 +13,138 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+#include "defines.h"
+
 #include "Object.h"
 #include "Sphere.h"
 #include "Cylinder.h"
 #include "Cube.h"
+
 #include "RayLight.h"
-#include "Texture4D.h"
+#include "texture4D.h"
 
 #include "CudaPointers.h"
 
+#include "Light.h"
+#include "PointLight.h"
+#include "DirectionalLight.h"
+
 #define NUMOBJ 7
+#define NUMLIGHT 1
+
 #define WINDOW_SIZE 3
-#define BUFFERSIZE 100000000
+#define BUFFERSIZE 50000000
 
-#define TEXU 512
-#define TEXV 256
-#define TEXS 33
-#define TEXT 33
+#define specPower 0.3
+#define specShiny 16
+#define ambientPower 0.1
 
-using typeT = double;
+#define U_SIZE 512
+#define V_SIZE 256
+#define S_SIZE 33
+#define T_SIZE 33
+
 using ObjectT = Object<typeT>;
 using SphereT = Sphere<typeT>;
 using CylinderT = Cylinder<typeT>;
 using CubeT = Cube<typeT>;
+
 using RayLightT = RayLight<typeT>;
 using Texture4DT = Texture4D<typeT>;
 using vec3T = vec3<typeT>;
 using CudaPointersT = CudaPointers<typeT>;
 
-void generateViewPort(ObjectT** obj) {
-	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
-	typeT fov = 90;
+using LightT = Light<typeT>;
+using PointLightT = PointLight<typeT>;
+using DirectionalLightT = DirectionalLight<typeT>;
+
+void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
+	//PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 4.5, 2), cv::Vec<typeT, 3>(1, 1, 1));
+	
+	viewerPos.x *= -1;
+	viewerDir.x *= -1;
+	
+	cv::Mat img = cv::Mat(width * aliasing, height * aliasing, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
-	vec3T viewPos = vec3T(-12, 0, 0);
-	vec3T viewDir = vec3T(1, 0, 0);
 
-	viewDir.normalize();
-	vec3T right = vec3(-viewDir.z, 0., viewDir.x);
+	viewerDir.normalize();
+	vec3T right = vec3(-viewerDir.z, 0., viewerDir.x);
 	right.normalize();
-	vec3T up = vec3(-right.z * viewDir.y, right.z * viewDir.x - right.x * viewDir.z, right.x * viewDir.y);
+	vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
 	up.normalize();
-
-	printf("%f, %f, %f\n", viewDir.x, viewDir.y, viewDir.z);
-	printf("%f, %f, %f\n", viewPos.x, viewPos.y, viewPos.z);
-	img.forEach<cv::Vec<typeT, 4>>([&obj, &viewPos, &viewDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
+	printf("Generate View Port\n");
+	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
+	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
+	img.forEach<cv::Vec<typeT, 4>>([&obj, &light, &viewerPos, &viewerDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
 		typeT dV = ((1.0 - 2.0 * pos[0] / typeT(img.rows - 1)) * halfHeight);
 		typeT dH = ((1.0 - 2.0 * pos[1] / typeT(img.cols - 1)) * halfHeight);
 
 		vec3T vDaux = vec3T(1, dV, dH);
 		vDaux.normalize();
 		vec3T vD = vec3T(
-			viewDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
-			viewDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
-			viewDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
+			viewerDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
+			viewerDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
+			viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
 		);
 
-		RayLightT ray = RayLightT(viewPos, vD);
-		ObjectT* colObj[1];
+		RayLightT ray = RayLightT(viewerPos, vD);
+		vec3T normal_out, normal, collision_out, collision;
+		int objsel = -1;
 		typeT dist = -1;
 		for (int i = 0; i < NUMOBJ; i++)
 		{
-			typeT d = obj[i]->CheckCollision(ray);;
-			//typeT d = obj[i]->CheckCollision(ray);
+			typeT d = obj[i]->CheckCollision(ray, collision_out, normal_out);
 			if ((d < dist && d >= 0) || dist == -1) {
 				dist = d;
-				colObj[0] = obj[i];
+				normal = normal_out;
+				collision = collision_out;
+				objsel = i;
 			}
 		}
 
-		if (dist >= 0)pixel = colObj[0]->color;
-		else pixel = cv::Vec4d(0, 0, 0, 0);
+		if (dist >= 0) {
+			pixel = Light<typeT>::setAmbientLight(*obj[objsel], ambientPower);
+			for (int i = 0; i < NUMLIGHT; i++)
+				pixel += light[i]->lightEffect(*obj[objsel], collision, normal, viewerPos);
+		}
+		else pixel = cv::Vec4d(0.5, 0.5, 0.5, 1);
 	});
 
-	cv::resize(img, img, cv::Size(720, 720));
+	cv::resize(img, img, cv::Size(width, height));
 	img.convertTo(img, CV_8UC4, 255, 0);
-	cv::imshow("teste", img);
-	cv::imwrite("D:/testeGen.png", img);
-	cv::waitKey(0);
+	cv::imwrite(nameFile, img);
+
+	img.release();
 }
 
-void generateViewPortCuda(ObjectT** obj) {
-	cv::Mat img = cv::Mat(2048, 2048, CV_64FC4);
-	typeT fov = 90;
-	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
-	vec3T viewPos = vec3T(-12, 0, 0);
-	vec3T viewDir = vec3T(1, 0, 0);
+void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
 
-	viewDir.normalize();
-	vec3T right = vec3(-viewDir.z, 0., viewDir.x);
+	cv::Mat img = cv::Mat(width * aliasing, height * aliasing, CV_64FC4);
+	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
+
+	viewerDir.normalize();
+	vec3T right = vec3(-viewerDir.z, 0., viewerDir.x);
 	right.normalize();
-	vec3T up = vec3(-right.z * viewDir.y, right.z * viewDir.x - right.x * viewDir.z, right.x * viewDir.y);
+	vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
 	up.normalize();
 
-	printf("%f, %f, %f\n", viewDir.x, viewDir.y, viewDir.z);
-	printf("%f, %f, %f\n", viewPos.x, viewPos.y, viewPos.z);
+	printf("Generate View Port Cuda\n");
+	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
+	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
 
 	CudaPointersT cp;
 	cp.allocate(img.total(), 0, 0, 0, 0);
+	{
+		std::vector <cv::Vec<typeT, 4>> objColorList(NUMOBJ);
+		std::vector <uint8_t> objShinyList(NUMOBJ);
+		for (int i = 0; i < NUMOBJ; i++) {
+			objColorList[i] = obj[i]->color;
+			objShinyList[i] = obj[i]->specularShininness;
+		}
+		cp.uploadObjectColorProp(objColorList.data(), objShinyList.data(), NUMOBJ);
+	}
+	cp.setHitObjectList(-1, img.total());
+	cp.setDistList(10e10, img.total());
 
 	std::vector<RayLightT> rayList = std::vector<RayLightT>(img.total());
 	for (int r = 0; r < img.rows; r++)
@@ -121,70 +156,55 @@ void generateViewPortCuda(ObjectT** obj) {
 			vec3T vDaux = vec3T(1, dV, dH);
 			vDaux.normalize();
 			vec3T vD = vec3T(
-				viewDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
-				viewDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
-				viewDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
+				viewerDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
+				viewerDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
+				viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
 			);
 
-			//if ((r == 1024 || r == 0) && c == 1024) {
-			//	printf("a %d %d %f, %f, %f\n", r, c, vDaux.x, vDaux.y, vDaux.z);
-			//	printf("b %d %d %f, %f, %f\n", r, c, vD.x, vD.y, vD.z);
-			//}
-
-			rayList[img.rows * c + r] = RayLightT(viewPos, vD);
+			rayList[img.cols * r + c] = RayLightT(viewerPos, vD);
 		}
+	cp.uploadRayList(rayList.data(), img.total());
 
-	std::vector<typeT>distList = std::vector<typeT>(img.total(), -1);
-	std::vector<int>selObjList = std::vector<int>(img.total(), -1);
-
-	cp.uploadRayList(rayList);
 	for (int j = 0; j < NUMOBJ; j++)
-	{
-		std::vector<typeT> dList = std::vector<typeT>(rayList.size());
-		obj[j]->CheckCollisionCuda(dList, cp);
-		for(int i = 0; i < img.total(); i++)
-			if ((dList[i] < distList[i] && dList[i] >= 0) || distList[i] == -1) {
-				distList[i] = dList[i];
-				selObjList[i] = j;
-			}
-	}
+		obj[j]->CheckCollisionCuda(cp, img.total(), j);
 
+	Light<typeT>::setAmbientLightCUDA(cp, ambientPower, img.total());
+	for (int j = 0; j < NUMLIGHT; j++)
+		light[j]->addLightEffectsCUDA(cp, img.total());
+
+	cp.downloadPixelColor((cv::Vec<typeT, 4> *)(img.data), img.total());
 	cp.free();
 
-	for (int r = 0; r < img.rows; r++)
-		for (int c = 0; c < img.cols; c++)
-		{
-			if (distList[img.rows * c + r] >= 0)img.at<cv::Vec4d>(r, c) = obj[selObjList[img.rows * c + r]]->color;
-			else img.at<cv::Vec4d>(r, c) = cv::Vec4d(0, 0, 0, 0);
-		}
-
-	cv::resize(img, img, cv::Size(720, 720));
+	cv::resize(img, img, cv::Size(width, height));
 	img.convertTo(img, CV_8UC4, 255, 0);
-	cv::imshow("teste2", img);
-	cv::imwrite("D:/testeGenCuda.png", img);
-	cv::waitKey(0);
+	cv::imwrite(nameFile, img);
+
+	img.release();
 }
 
-void generateTexture(ObjectT** obj) {
-	const int ws = WINDOW_SIZE * 2 + 1;
+void generateTexture(ObjectT** obj, LightT** light, std::string fileName, int usize, int vsize, int ssize, int tsize, int windowSize) {
+	const int ws = windowSize * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
-	int size[] = { TEXU,TEXV,TEXS,TEXT };
+	int size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+
+	printf("Generate Texture\n");
+	printf("Sizes: u:%d v:%d s:%d t:%d wS:%d\n", usize, vsize, ssize, tsize, windowSize);
 
 	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
 	double halfinc[4];
-	if (WINDOW_SIZE == 0) {
+	if (windowSize == 0) {
 		halfinc[0] = 0;
 		halfinc[1] = 0;
 		halfinc[2] = 0;
 		halfinc[3] = 0;
 	}
 	else {
-		halfinc[0] = inc[0] / (2. * WINDOW_SIZE);
-		halfinc[1] = inc[1] / (2. * WINDOW_SIZE);
-		halfinc[2] = inc[2] / (2. * WINDOW_SIZE);
-		halfinc[3] = inc[3] / (2. * WINDOW_SIZE);
+		halfinc[0] = inc[0] / (2. * windowSize);
+		halfinc[1] = inc[1] / (2. * windowSize);
+		halfinc[2] = inc[2] / (2. * windowSize);
+		halfinc[3] = inc[3] / (2. * windowSize);
 	}
 
 	typeT radius = 3.5;
@@ -192,13 +212,13 @@ void generateTexture(ObjectT** obj) {
 	typeT denom = 1. / wsTotal;
 	std::cout << denom << std::endl;
 
-	std::cout << "Compile Texture" << std::endl;
+	std::cout << "Compile texture" << std::endl;
 	auto start = std::chrono::steady_clock::now();
 	for (int t = 0; t < size[3]; t++) {
 		auto start = std::chrono::steady_clock::now();
 		std::cout << "Step t" << t << std::endl;
 		for (int s = 0; s < size[2]; s++) {
-			std::cout << "Step t" << t << " s " << s << std::endl;
+			std::cout << "Step t" << t << "/" << size[2] << " s " << s << "/" << size[3] << std::endl;
 			auto start = std::chrono::steady_clock::now();
 #pragma omp parallel for collapse(2)
 			for (int v = 0; v < size[1]; v++) {
@@ -207,13 +227,17 @@ void generateTexture(ObjectT** obj) {
 					double angleBase[] = { -(inc[0] * u - M_PI), inc[1] * v - M_PI_2, inc[2] * s - M_PI_2, inc[3] * t - M_PI_2 };
 
 					cv::Vec<typeT, 4> sumPixel = cv::Vec<typeT, 4>(0, 0, 0, 0);
+					cv::Vec<typeT, 4> color;
+					vec3T normal_out, normal, collision_out, collision;
+					int objsel;
+					typeT dist;
+					double d;
 
-					int ind = 0;
 					//#pragma omp parallel for collapse(4)
-					for (int n = -WINDOW_SIZE; n <= WINDOW_SIZE; n++)
-						for (int m = -WINDOW_SIZE; m <= WINDOW_SIZE; m++)
-							for (int l = -WINDOW_SIZE; l <= WINDOW_SIZE; l++)
-								for (int k = -WINDOW_SIZE; k <= WINDOW_SIZE; k++)
+					for (int n = -windowSize; n <= windowSize; n++)
+						for (int m = -windowSize; m <= windowSize; m++)
+							for (int l = -windowSize; l <= windowSize; l++)
+								for (int k = -windowSize; k <= windowSize; k++)
 								{
 									typeT angle[] = { angleBase[0] + n * halfinc[0], angleBase[1] + m * halfinc[1], angleBase[2] + k * halfinc[2], angleBase[3] + l * halfinc[3] };
 
@@ -234,22 +258,29 @@ void generateTexture(ObjectT** obj) {
 									);
 									vD = vD * (-1);
 									RayLightT ray = RayLightT(pos, vD);
+									vec3T collision, normal;
 
 									//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
 
-									cv::Vec4d color;
-									double dist = -1;
+									color = cv::Vec<typeT, 4>(0, 0, 0, 0);
+									objsel = -1;
+									dist = 10e10;
 									for (int i = 0; i < NUMOBJ; i++)
 									{
-										double d = obj[i]->CheckCollision(ray);
-										if ((d < dist && d >= 0) || dist == -1) {
+										d = obj[i]->CheckCollision(ray, collision_out, normal_out);
+										if (d < dist && d >= 0) {
 											dist = d;
-											color = obj[i]->color;
+											normal = normal_out;
+											collision = collision_out;
+											objsel = i;
 										}
-										//printf("dist: %f %f ", d, dist);
 									}
-									if (dist >= 0)sumPixel += color;
-									//std::cout << std::endl;
+									if (objsel != -1) {
+										color = LightT::setAmbientLight(*obj[objsel], ambientPower);
+										for (int i = 0; i < NUMLIGHT; i++)
+											color += light[i]->lightEffect(*obj[objsel], collision, normal, ray.origin);
+										sumPixel += color;
+									}
 								}
 					tex(u, v, s, t) = sumPixel * denom;
 				}
@@ -265,18 +296,11 @@ void generateTexture(ObjectT** obj) {
 			<< " ms" << std::endl;
 	}
 
-	cv::Mat img = cv::Mat(256, 512, CV_64FC4);
-	for (int u = 0; u < 512; u++)
-		for (int v = 0; v < 256; v++)
-			img.at<cv::Vec4d>(v, u) = tex(u, v, 16, 16);
-	img.convertTo(img, CV_8UC4, 255);
-	cv::imshow("Teste", img);
-	cv::imwrite("D:/testeTexGen.png", img);
-	cv::waitKey(0);
+	cv::threshold(tex.texture, tex.texture, 1, 1, cv::THRESH_TRUNC);
 
 	{
 		auto start = std::chrono::steady_clock::now();
-		tex.compileToUnity("D:\\testeGenerator.asset");
+		tex.compileToImage(fileName);
 		auto end = std::chrono::steady_clock::now();
 		std::cout << "Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
@@ -284,15 +308,18 @@ void generateTexture(ObjectT** obj) {
 	}
 }
 
-void generateTextureCuda(ObjectT** obj) {
-	const int ws = WINDOW_SIZE * 2 + 1;
+void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, int usize, int vsize, int ssize, int tsize, int windowSize) {
+	const int ws = windowSize * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
 	const int bufferSize = BUFFERSIZE / wsTotal;
-	const int totalSize = TEXU * TEXV * TEXS * TEXT;
+	const int totalSize = usize * vsize * ssize * tsize;
 
-	int size[] = { TEXU,TEXV,TEXS,TEXT };
+	int size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+
+	printf("Generate Texture Cuda\n");
+	printf("Sizes: u:%d v:%d s:%d t:%d wS:%d\n", usize, vsize, ssize, tsize, windowSize);
 
 	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
 
@@ -301,114 +328,56 @@ void generateTextureCuda(ObjectT** obj) {
 	typeT denom = 1. / wsTotal;
 	std::cout << "Denominador: " << denom << std::endl;
 
-	//std::vector<RayLightT> rayList = std::vector< RayLightT>(totalSize);
-	std::vector<typeT> dist = std::vector< typeT>(bufferSize * wsTotal);
-	std::vector<int> objSel = std::vector<int>(bufferSize * wsTotal);
-	std::vector<typeT> d = std::vector<typeT>(bufferSize * wsTotal);
-
 	CudaPointersT cp;
+	cp.allocate(bufferSize * wsTotal, usize, vsize, ssize, tsize);
+	{
+		std::vector <cv::Vec<typeT, 4>> objColorList(NUMOBJ);
+		std::vector <uint8_t> objShinyList(NUMOBJ);
+		for (int i = 0; i < NUMOBJ; i++) {
+			objColorList[i] = obj[i]->color;
+			objShinyList[i] = obj[i]->specularShininness;
+		}
+		cp.uploadObjectColorProp(objColorList.data(), objShinyList.data(), NUMOBJ);
+	}
 	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
-	cp.allocate(bufferSize * wsTotal, TEXU, TEXV, TEXS, TEXT);
 
-	std::cout << "Compile Texture" << std::endl;
+	std::cout << "Compile texture" << std::endl;
 	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
 	int length = bufferSize;
+	if (totalSize - countLoop < bufferSize)
+		length = totalSize - countLoop;
+	int bufferTotal;
+	cv::Vec<typeT, 4>* dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
+
 	while (countLoop < totalSize)
 	{
 		auto start = std::chrono::steady_clock::now();
 
-		std::cout << countLoop << "/" << totalSize;
+		bufferTotal = length * wsTotal;
+
+		std::cout << countLoop << "/" << totalSize << std::endl;
 
 		tex.RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
-		//std::vector<RayLightT> rayList = std::vector<RayLightT>(bufferSize * wsTotal);
-		//cp.downloadRayList(rayList);
-		//for (int i = 0; i < rayList.size(); i++) {
-		//	int index = countLoop + i / wsTotal;
-		//	int u = (index) / (size[3] * size[2] * size[1]);
-		//	int v = ((index / size[3]) / size[2]) % size[1];
-		//	int s = (index / size[3]) % size[2];
-		//	int t = index % size[3];
-		//	if (u == 256 && v == 128 && s == 0 && t == 0) {
-		//		printf("u: %d v : %d s: %d t: %d ", index / (size[3] * size[2] * size[1]), ((index / size[3]) / size[2]) % size[1], (index / size[3]) % size[2], index % size[3]);
-		//		printf("%d pos: %f %f %f dir: %f %f %f\n", i, rayList[i].origin.x, rayList[i].origin.y, rayList[i].origin.z, rayList[i].direction.x, rayList[i].direction.y, rayList[i].direction.z);
-		//	}
-		//}
-		//auto end = std::chrono::steady_clock::now();
-		//std::cout << "Ray Light Elapsed time in milliseconds: "
-		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-		//	<< " ms" << std::endl;
 
-		//auto start1 = std::chrono::steady_clock::now();
-		for (int& i : objSel)
-			i = -1;
-		for (typeT& i : dist)
-			i = -1;
+		cp.setHitObjectList(-1, bufferTotal);
+		cp.setDistList(10e10, bufferTotal);
 		for (int o = 0; o < NUMOBJ; o++)
 		{
-			obj[o]->CheckCollisionCuda(d, cp);
-#pragma omp parallel for
-			for (int i = 0; i < d.size(); i++)
-				if ((d[i] < dist[i] && d[i] >= 0) || dist[i] == -1) {
-					dist[i] = d[i];
-					objSel[i] = o;
-				}
-
-			//std::cout << "Size d:" << d.size() << std::endl;
-			//for (int i = 0; i < d.size(); i++) {
-			//	int index = countLoop + i / wsTotal;
-			//	int u = (index) / (size[3] * size[2] * size[1]);
-			//	int v = ((index / size[3]) / size[2]) % size[1];
-			//	int s = (index / size[3]) % size[2];
-			//	int t = index % size[3];
-			//	if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0)) {
-			//		printf("u: %d v : %d s: %d t: %d ", u, v, s, t);
-			//		printf("dist %d: %f %f %d\n", o, d[i], dist[i], objSel[i]);
-			//	}
-			//}
+			obj[o]->CheckCollisionCuda(cp, bufferTotal, o);
 		}
-		//auto end1 = std::chrono::steady_clock::now();
-		//std::cout << "Collisor Elapsed time in milliseconds: "
-		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1).count()
-		//	<< " ms" << std::endl;
+		LightT::setAmbientLightCUDA(cp, 0.1, bufferTotal);
+		for (int j = 0; j < NUMLIGHT; j++)
+			light[j]->addLightEffectsCUDA(cp, bufferTotal);
 
-		//auto start2 = std::chrono::steady_clock::now();
-#pragma omp parallel for
-		for (int i = 0; i < length; i++)
-		{
-			int u = (countLoop + i) / (size[3] * size[2] * size[1]);
-			int v = (((countLoop + i) / size[3]) / size[2]) % size[1];
-			int s = ((countLoop + i) / size[3]) % size[2];
-			int t = (countLoop + i) % size[3];
-
-			cv::Vec4d sumPixel = cv::Vec4d(0, 0, 0, 0);
-			for (int j = 0; j < wsTotal; j++)
-			{
-				//if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0)) {
-				//	printf("u: %d v: %d s: %d t: %d ", u, v, s, t);
-				//	std::cout << i << " " << j << " " << wsTotal * i + j << " " << dist[wsTotal * i + j] << " " << objSel[wsTotal * i + j] << std::endl;
-				//}
-				if (dist[wsTotal * i + j] >= 0)
-				{
-					sumPixel += obj[objSel[wsTotal * i + j]]->color;/*
-					if (u == 256 && v == 128 && s == 0 && t == 0) {
-						std::cout << " Color: " << color << sumPixel << std::endl;
-					}*/
-				}
-				//else if (u == 256 && v == 128 && s == 0 && t == 0) std::cout << " No hit" << std::endl;
-			}
-			tex.texture.at<cv::Vec<typeT,4>>(countLoop + i) = sumPixel * denom;
-			tex(u, v, s, t) = sumPixel * denom;
-			//if ((u == 41 && v == 156 && s == 0 && t == 0) || (u == 300 && v == 101 && s == 0 && t == 0))
-			//	std::cout << " Final Color: " << sumPixel * denom << tex(u, v, s, t) << std::endl;
-
-		}
+		cp.pixelReduction(wsTotal, length);
+		cp.downloadPixelColor(dataPixel, length);
 
 		auto end = std::chrono::steady_clock::now();
 		std::cout << " Compare Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
 			<< " ms" << std::endl;
 		//return;
-
+		dataPixel += length;
 		countLoop += length;
 		if (totalSize - countLoop < bufferSize)
 			length = totalSize - countLoop;
@@ -419,20 +388,10 @@ void generateTextureCuda(ObjectT** obj) {
 
 	cp.free();
 
-	cv::Mat img = cv::Mat(TEXV, TEXU, CV_64FC4);
-	for (int u = 0; u < TEXU; u++)
-		for (int v = 0; v < TEXV; v++)
-			//img.at<cv::Vec4d>(v, u) = tex(u, v, 0, 0);
-			img.at<cv::Vec4d>(v, u) = tex(u, v, TEXS / 2, TEXT / 2);
-	img.convertTo(img, CV_8UC4, 255);
-	cv::imwrite("D:/testeGen.png", img);
-	cv::imshow("Teste", img);
-	cv::imwrite("D:/testeTexGenCuda.png", img);
-	cv::waitKey(0);
-
 	{
 		auto start = std::chrono::steady_clock::now();
-		tex.compileToUnity("D:\\testeGeneratorCuda.asset");
+		//tex.compileToUnity("D:\\testeGeneratorCuda.asset");
+		tex.compileToImage(fileName);
 		auto end = std::chrono::steady_clock::now();
 		std::cout << "Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
@@ -440,24 +399,523 @@ void generateTextureCuda(ObjectT** obj) {
 	}
 }
 
-int main()
-{
-	const int ws = WINDOW_SIZE * 2 + 1;
+void generateMaps(ObjectT** obj, std::string fileName, int usize, int vsize, int windowSize) {
+	const int ws = windowSize * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
-	ObjectT* obj[NUMOBJ];
-	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec4d(1, 1, 1, 1));
-	obj[1] = new SphereT(vec3T(0, 0, -1.87), 1, cv::Vec4d(0, 0, 1, 1));
-	obj[2] = new CylinderT(vec3T(2.62, 0, 0), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0.941, 0.125, 0.627, 1));
-	obj[3] = new CubeT(vec3T(-1.2, .71, -.68), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 0, 1));
-	obj[4] = new CubeT(vec3T(1.47, -1.05, .93), vec3T(0, 0, 0), 1, 1, 1, cv::Vec4d(0, 1, 1, 1));
-	obj[5] = new CylinderT(vec3T(-1.07, -.41, 1.81), vec3T(0, 0, 0), 1, 2, cv::Vec4d(1, 0, 0, 1));
-	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec4d(0, 0, 0, 1));
+	const int totalSize = usize * vsize;
 
-	//generateTexture(obj);
-	generateTextureCuda(obj);
-	//generateViewPort(obj);
-	//generateViewPortCuda(obj);
+	int size[] = { usize,vsize };
+
+	//Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+	cv::Mat texture = cv::Mat(usize, vsize, CV_64FC4);
+	cv::Mat normal = cv::Mat(usize, vsize, CV_64FC3);
+	cv::Mat height = cv::Mat(usize, vsize, CV_64FC1);
+
+	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
+	double halfinc[4];
+	if (windowSize == 0) {
+		halfinc[0] = 0;
+		halfinc[1] = 0;
+		halfinc[2] = 0;
+		halfinc[3] = 0;
+	}
+	else {
+		halfinc[0] = inc[0] / (2. * windowSize);
+		halfinc[1] = inc[1] / (2. * windowSize);
+		halfinc[2] = inc[2] / (2. * windowSize);
+		halfinc[3] = inc[3] / (2. * windowSize);
+	}
+
+	typeT radius = 3.5;
+
+	typeT denom = 1. / wsTotal;
+	std::cout << denom << std::endl;
+
+	std::cout << "Compile Map" << std::endl;
+#pragma omp parallel for collapse(2)
+	for (int v = 0; v < size[1]; v++) {
+		for (int u = 0; u < size[0]; u++)
+		{
+			double angleBase[] = { -(inc[0] * u - M_PI), inc[1] * v - M_PI_2 };
+
+			cv::Vec<typeT, 4> sumPixel = cv::Vec<typeT, 4>(0, 0, 0, 0);
+			vec3T sumNormal = vec3T(0, 0, 0);
+			typeT sumDist = 0;
+			cv::Vec<typeT, 4> color;
+			vec3T normal_out, normal_vec, collision_out, collision;
+			int objsel;
+			typeT dist;
+			double d;
+
+			//#pragma omp parallel for collapse(4)
+			for (int n = -windowSize; n <= windowSize; n++)
+				for (int m = -windowSize; m <= windowSize; m++)
+					for (int l = -windowSize; l <= windowSize; l++)
+						for (int k = -windowSize; k <= windowSize; k++)
+						{
+							typeT angle[] = { angleBase[0] + n * halfinc[0], angleBase[1] + m * halfinc[1] };
+
+							vec3T pos = vec3T(radius * sin(angle[0]) * cos(angle[1]), radius * sin(angle[1]), radius * cos(angle[0]) * cos(angle[1]));
+
+							vec3T vD(pos);
+							vD.normalize();
+							vD = vD * (-1);
+							RayLightT ray = RayLightT(pos, vD);
+							vec3T collision, normal;
+
+							//printf("%d %d %d %d %d %d %d %d angle: %f %f %f %f pos: %f %f %f dir: %f %f %f ", u, v, s, t, k, l, m, n, angle[0], angle[1], angle[2], angle[3], ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z);
+
+							color = cv::Vec<typeT, 4>(0, 0, 0, 0);
+							objsel = -1;
+							dist = 10e10;
+							for (int i = 0; i < NUMOBJ; i++)
+							{
+								d = obj[i]->CheckCollision(ray, collision_out, normal_out);
+								if (d < dist && d >= 0) {
+									dist = d;
+									normal_vec = normal_out;
+									objsel = i;
+								}
+							}
+							if (objsel != -1) {
+								color = LightT::setAmbientLight(*obj[objsel], 1);
+								sumPixel += color;
+								sumNormal += normal_vec;
+								sumDist += dist;
+							}
+						}
+			texture.at<cv::Vec<typeT, 4>>(u, v) = sumPixel * denom;
+			sumNormal.normalize();
+			normal.at<cv::Vec<typeT, 3>>(u, v) = cv::Vec<typeT, 3>(normal_vec.x, normal_vec.y, normal_vec.z);
+			height.at<typeT>(u, v) = sumDist * denom;
+		}
+	}
+
+	std::string rootName = fileName.substr(0, rootName.length() - 4);
+	std::string extension = fileName.substr(rootName.length() - 4, 4);
+
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+	cv::transpose(img, img);
+	//cv::imwrite("D:/testeTexMap.png", img);
+	cv::imwrite(fileName, img);
+
+	normal.convertTo(img, CV_8UC3, 127, 127);
+	cv::transpose(img, img);
+	cv::imwrite(rootName + "Normal" + extension, img);
+	//cv::imwrite("D:/testeNormalMap.png", img);
+
+	height.convertTo(img, CV_8UC1, -127 / (2 * radius), 127);
+	cv::transpose(img, img);
+	cv::imwrite(rootName + "Height" + extension, img);
+	//cv::imwrite("D:/testeHeightMap.png", img);
+}
+
+void generateMapsCuda(ObjectT** obj, std::string fileName, int usize, int vsize, int windowSize) {
+	const int ws = windowSize * 2 + 1;
+	const int wsTotal = ws * ws * ws * ws;
+
+	const int bufferSize = BUFFERSIZE / wsTotal;
+	const int totalSize = usize * vsize;
+
+	int size[] = { usize,vsize };
+
+
+	//Texture tex = Texture4DT(size[0], size[1], size[2], size[3]);
+	cv::Mat texture = cv::Mat(usize, vsize, CV_64FC4);
+	cv::Mat normal = cv::Mat(usize, vsize, CV_64FC3);
+	cv::Mat height = cv::Mat(usize, vsize, CV_64FC1);
+
+
+	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
+
+	typeT radius = 3.5;
+
+	typeT denom = 1. / wsTotal;
+	std::cout << "Denominador: " << denom << std::endl;
+
+	CudaPointersT cp;
+	cp.allocate(bufferSize * wsTotal, usize, vsize, 1, 1);
+	{
+		std::vector <cv::Vec<typeT, 4>> objColorList(NUMOBJ);
+		std::vector <uint8_t> objShinyList(NUMOBJ);
+		for (int i = 0; i < NUMOBJ; i++) {
+			objColorList[i] = obj[i]->color;
+			objShinyList[i] = obj[i]->specularShininness;
+		}
+		cp.uploadObjectColorProp(objColorList.data(), objShinyList.data(), NUMOBJ);
+	}
+	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
+
+	std::cout << "Compile texture" << std::endl;
+	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+	int length = bufferSize;
+	if (totalSize < bufferSize)
+		length = totalSize - countLoop;
+	int bufferTotal;
+	cv::Vec<typeT, 4>* texturePixel = (cv::Vec<typeT, 4>*)texture.data;
+	vec3T* normalPixel = (vec3T *)normal.data;
+	typeT* heightPixel = (typeT *)height.data;
+
+	while (countLoop < totalSize)
+	{
+		auto start = std::chrono::steady_clock::now();
+
+		bufferTotal = length * wsTotal;
+
+		std::cout << countLoop << "/" << totalSize << std::endl;
+
+		Texture4DT(usize, vsize, 1, 1).RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
+
+		cp.setHitObjectList(-1, bufferTotal);
+		cp.setDistList(10e10, bufferTotal);
+		for (int o = 0; o < NUMOBJ; o++)
+		{
+			obj[o]->CheckCollisionCuda(cp, bufferTotal, o);
+		}
+		LightT::setAmbientLightCUDA(cp, 1, bufferTotal);
+
+		cp.pixelReduction(wsTotal, length);
+		cp.downloadPixelColor(texturePixel, length);
+
+		cp.normalReduction(wsTotal, length);
+		cp.downloadNormalList(normalPixel, length);
+
+		cp.distReduction(wsTotal, length);
+		cp.downloadDistList(heightPixel, length);
+
+		auto end = std::chrono::steady_clock::now();
+		std::cout << " Compare Elapsed time in milliseconds: "
+			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+			<< " ms" << std::endl;
+		//return;
+		texturePixel += length;
+		normalPixel += length;
+		heightPixel += length;
+		countLoop += length;
+		if (totalSize - countLoop < bufferSize)
+			length = totalSize - countLoop;
+	}
+	cp.free();
+
+	std::string rootName = fileName.substr(0, rootName.length() - 4);
+	std::string extension = fileName.substr(rootName.length() - 4, 4);
+
+	cv::Mat img;
+	texture.convertTo(img, CV_8UC4, 255);
+	cv::transpose(img, img);
+	//cv::imwrite("D:/testeTexMap.png", img);
+	cv::imwrite(fileName, img);
+
+	normal.convertTo(img, CV_8UC3, 127, 127);
+	cv::transpose(img, img);
+	cv::imwrite(rootName + "Normal" + extension, img);
+	//cv::imwrite("D:/testeNormalMap.png", img);
+
+	height.convertTo(img, CV_8UC1, -127 / (2 * radius), 127);
+	cv::transpose(img, img);
+	cv::imwrite(rootName + "Height" + extension, img);
+	//cv::imwrite("D:/testeHeightMap.png", img);
+}
+
+void generateViewPortTexture(std::string textureFile, int usize, int vsize, int ssize, int tsize, float sphereRadius, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
+
+	cv::Mat img = cv::Mat(width * aliasing, height * aliasing, CV_64FC4);
+	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
+
+	SphereT sphere = SphereT(vec3T(0, 0, 0), 2 * sphereRadius, cv::Vec<typeT, 3>(0, 0, 0), 0, 0);
+
+	printf("Generate View Port Texture\n");
+
+	viewerDir.normalize();
+	vec3T right = vec3(viewerDir.z, 0., -viewerDir.x);
+	right.normalize();
+	vec3T up = vec3(right.z * viewerDir.y, -right.z * viewerDir.x + right.x * viewerDir.z, -right.x * viewerDir.y);
+	up.normalize();
+
+	cv::Mat texture = cv::imread(textureFile, cv::IMREAD_UNCHANGED);
+	std::cout << texture.size << std::endl;
+
+	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
+	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
+	//printf("right: %f, %f, %f\n", right.x, right.y, right.z);
+	//printf("up: %f, %f, %f\n", up.x, up.y, up.z);
+
+	int count = 0;
+	img.forEach<cv::Vec<typeT, 4>>([&](cv::Vec<typeT, 4>& pixel, const int* pos)->void
+		//int pos[2];
+		//for (pos[0] = 0; pos[0] < img.rows; pos[0]++)
+		//	for (pos[1] = 0; pos[1] < img.cols; pos[1]++)
+	{
+		typeT dV = ((1.0 - 2.0 * pos[0] / typeT(img.rows - 1)) * halfHeight);
+		typeT dH = -((2.0 * pos[1] / typeT(img.cols - 1) - 1) * halfHeight);
+
+		vec3T vDaux = vec3T(dH, dV, 1);
+		//printf("vDaux %f %f %f\n", vDaux.x, vDaux.y, vDaux.z);
+		vDaux.normalize();
+		//vec3T vD = vec3T(
+		//	right.x * vDaux.x + up.x * vDaux.y + viewerDir.x * vDaux.z,
+		//	right.y * vDaux.x + up.y * vDaux.y + viewerDir.y * vDaux.z,
+		//	right.z * vDaux.x + up.z * vDaux.y + viewerDir.z * vDaux.z
+		//);
+
+		vec3T vD = vec3T(
+			right.x * vDaux.x + up.x * vDaux.y + viewerDir.x * vDaux.z,
+			right.y * vDaux.x + up.y * vDaux.y + viewerDir.y * vDaux.z,
+			right.z * vDaux.x + up.z * vDaux.y + viewerDir.z * vDaux.z
+		);
+
+		RayLightT ray = RayLightT(viewerPos, vD);
+
+		//printf("ray direction %f %f %f\n", ray.direction.x, ray.direction.y, ray.direction.z);
+		vec3T collision, normal;
+		typeT dist = sphere.CheckCollision(ray, collision, normal);
+
+		vD = vD * -1;
+		if (dist >= 0) {
+			count++;
+			double uang, vang;
+			uang = atan2(collision.x, collision.z);
+			vang = asin(collision.y / sphereRadius);
+
+			//printf("\nrow: %d col: %d\n", pos[0], pos[1]);
+			//printf("ray origin %f %f %f\n", ray.origin.x, ray.origin.y, ray.origin.z);
+			//printf("ray direction %f %f %f\n", ray.direction.x, ray.direction.y, ray.direction.z);
+			//printf("inv ray direction %f %f %f\n", vD.x, vD.y, vD.z);
+			//printf("collision %f %f %f\n", collision.x, collision.y, collision.z);
+			//printf("normal %f %f %f\n", normal.x, normal.y, normal.z);
+			//printf("uang: %f vang: %f\n", uang * 180 / M_PI, vang * 180 / M_PI);
+
+			uang = usize * (uang + M_PI) / (2 * M_PI);
+			vang = (vsize - 1) * (vang + M_PI_2) / M_PI;
+
+			int u[2], v[2];
+			u[1] = ceil(uang);
+			u[0] = u[1] - 1;
+			if (u[1] == usize) u[1] = 0;
+			v[1] = ceil(vang);
+			v[0] = v[1] - 1;
+
+			double uw = uang - u[0], vw = vang - v[0];
+
+			//printf("u: %d %d %f v: %d %d %f\n\n", u[0], u[1], uang, v[0], v[1], vang);
+
+			cv::Vec<typeT, 4> color[4];
+			for (int i = 0; i < 4; i++) { //uv, Uv, uV, UV
+				int u_win = u[i % 2];
+				int v_win = v[i / 2];
+				//printf("i iter %d u: %d v: %d\n", i, u_win, v_win);
+				double uang = 2 * M_PI * u_win / usize - M_PI;
+				double vang = M_PI * v_win / (vsize - 1) - M_PI_2;
+				//printf("i iter %d u: %f v: %f\n", i, uang * 180 / M_PI, vang * 180 / M_PI);
+
+				vec3T versorForward = vec3T(sin(uang) * cos(vang), sin(vang), cos(uang) * cos(vang));
+				versorForward.normalize();
+				//printf("forward %f %f %f\n", versorForward.x, versorForward.y, versorForward.z);
+				vec3T versorRight = vec3T(versorForward.z, 0., -versorForward.x);
+				versorRight.normalize();
+				vec3T versorUp = vec3T(versorRight.z * versorForward.y, -versorRight.z * versorForward.x + versorRight.x * versorForward.z, -versorRight.x * versorForward.y);
+				versorUp.normalize();
+				//printf("right %f %f %f\n", versorRight.x, versorRight.y, versorRight.z);
+				//printf("up %f %f %f\n", versorUp.x, versorUp.y, versorUp.z);
+
+				vec3T vD_P = vec3T(
+					versorRight.x * vD.x + versorRight.y * vD.y + versorRight.z * vD.z,
+					versorUp.x * vD.x + versorUp.y * vD.y + versorUp.z * vD.z,
+					versorForward.x * vD.x + versorForward.y * vD.y + versorForward.z * vD.z
+				);
+				vD_P.normalize();
+				//printf("new Dir %f %f %f\n", vD_P.x, vD_P.y, vD_P.z);
+
+				double sang = atan(vD_P.x / vD_P.z);
+				double tang = asin(vD_P.y);
+				//printf("sang: %f tang: %f\n", sang * 180 / M_PI, tang * 180 / M_PI);
+
+				sang = (ssize - 1) * (sang + M_PI_2) / M_PI;
+				tang = (tsize - 1) * (tang + M_PI_2) / M_PI;
+
+				int s[2], t[2];
+				s[1] = ceil(sang);
+				s[0] = s[1] - 1;
+				t[1] = ceil(tang);
+				t[0] = t[1] - 1;
+				//printf("s: %d %d %f t: %d %d %f\n\n", s[0], s[1], sang, t[0], t[1], tang);
+
+				double sw = sang - s[0], tw = tang - t[0];
+
+
+				cv::Vec<typeT, 4> color_01 = texture.at<cv::Vec4b>(v_win + vsize * t[0], u_win + usize * s[0]); //st
+				color_01 /= 255;
+				cv::Vec<typeT, 4> color_02 = texture.at<cv::Vec4b>(v_win + vsize * t[0], u_win + usize * s[1]); //St
+				color_02 /= 255;
+				cv::Vec<typeT, 4> color_11 = color_01 + sw * (color_02 - color_01);  //t
+
+				color_01 = texture.at<cv::Vec4b>(v_win + vsize * t[1], u_win + usize * s[0]); //sT
+				color_01 /= 255;
+				color_02 = texture.at<cv::Vec4b>(v_win + vsize * t[1], u_win + usize * s[1]); //ST
+				color_02 /= 255;
+				cv::Vec<typeT, 4> color_12 = color_01 + sw * (color_02 - color_01);  //T
+
+				color[i] = color_11 + tw * (color_12 - color_11);
+			}
+
+			cv::Vec<typeT, 4> color_21 = color[0] + uw * (color[1] - color[0]);  // uv - Uv
+			cv::Vec<typeT, 4> color_22 = color[2] + uw * (color[3] - color[2]);  // uV - UV
+			cv::Vec<typeT, 4> final_color = color_21 + vw * (color_22 - color_21);
+			pixel = cv::Vec<typeT, 4>(final_color[3] * final_color[0] + (1 - final_color[3]) * .5,
+				final_color[3] * final_color[1] + (1 - final_color[3]) * .5,
+				final_color[3] * final_color[2] + (1 - final_color[3]) * .5,
+				1);
+		}
+		else pixel = cv::Vec4d(.5, .5, .5, 1);
+	});
+
+	std::cout << "Count Collision: " << count << std::endl;
+	cv::resize(img, img, cv::Size(width, height), 0, 0, cv::INTER_AREA);
+	img.convertTo(img, CV_8UC4, 255, 0);
+	cv::imwrite(nameFile, img);
+	std::cout << std::endl << std::endl;
+
+	img.release();
+	texture.release();
+}
+
+struct experiment{
+	int usize;
+	int vsize;
+	int ssize;
+	int tsize;
+
+	int windowSize;
+	experiment(int usize, int vsize, int ssize, int tsize, int ws) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), windowSize(ws) {};
+} ;
+
+struct viewer {
+	vec3T position;
+	vec3T direction;
+	int width;
+	int height;
+	double fov;
+	int aliasing;
+	viewer(vec3T pos, vec3T dir, int width, int height, double fov, int alias) :position(pos), direction(dir), width(width), height(height), fov(fov), aliasing(alias) {};
+};
+
+
+int main(int argc, char *argv[])
+{
+	ObjectT* obj[NUMOBJ];
+	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec<typeT, 3>(1, 1, 1), specPower, specShiny);
+	obj[1] = new SphereT(vec3T(0, 0, -1.87), 1, cv::Vec<typeT, 3>(0, 0, 1), specPower, specShiny);
+	obj[2] = new CylinderT(vec3T(2.62, 0, 0), vec3T(0, 0, 0), 1, 2, cv::Vec<typeT, 3>(0.941, 0.125, 0.627), specPower, specShiny);
+	obj[3] = new CubeT(vec3T(-1.2, .71, -.68), vec3T(0, 0, 0), 1, 1, 1, cv::Vec<typeT, 3>(0, 1, 0), specPower, specShiny);
+	obj[4] = new CubeT(vec3T(1.47, -1.05, .93), vec3T(0, 0, 0), 1, 1, 1, cv::Vec<typeT, 3>(0, 1, 1), specPower, specShiny);
+	obj[5] = new CylinderT(vec3T(-1.07, -.41, 1.81), vec3T(90, 0, 0), 1, 2, cv::Vec<typeT, 3>(1, 0, 0), specPower, specShiny);
+	obj[6] = new CylinderT(vec3T(.87, .76, 2.06), vec3T(0, 0, 0), 1, 2, cv::Vec<typeT, 3>(0, 0, 0), specPower, specShiny);
+
+	LightT* light[NUMLIGHT];
+	light[0] = new DirectionalLightT(vec3T(-6, 0, 0), vec3T(1, 1, 1));
+
+	// < 2^31
+	std::vector<experiment> expList = { 
+		experiment(512,256,32,32,0),
+		experiment(512,256,32,32,3),
+		experiment(512,256,32,32,0),
+		experiment(512,256,32,32,3),
+		experiment(64,32,256,256,0),
+		experiment(64,32,256,256,3),
+		experiment(64,32,256,256,0),
+		experiment(64,32,256,256,3),
+		experiment(512,256,64,64,0),
+		experiment(512,256,64,64,3),
+		experiment(1024,512,64,32,0),
+		experiment(1024,512,64,32,3), 
+	};
+
+	std::vector<viewer> viewList = {
+		viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+		viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+		viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+
+		viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,1),
+
+		viewer(vec3T(0, 10, 0),vec3T(0,-1, 0),512,512,60,1),
+		viewer(vec3T(0, -10, 0),vec3T(0, 1, 0),512,512,60,1),
+
+		//viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+		//viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+		//viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+
+		//viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,5),
+	};
+
+	//std::string filePaste = "D:/teste/generator/";
+	std::string filePaste = argv[1];
+
+	for (int i = 0; i < expList.size(); i++) {
+	//for (int i = 0; i < 1; i++) {
+		std::cout << "Experiment " << i << std::endl;
+		experiment exp = expList[i];
+		std::string textureName = "texture_u" + std::to_string(exp.usize) + "_v" + std::to_string(exp.vsize) +
+			"_s" + std::to_string(exp.ssize) + "_t" + std::to_string(exp.tsize) + "_ws" + std::to_string(exp.windowSize) + ".png";
+		//generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
+
+		for (int j = 0; j < viewList.size(); j++) {
+			std::cout << "Viewer " << j << std::endl;
+			viewer view = viewList[j];
+			std::string fileName = filePaste + textureName +
+				"__pos_" + (view.position.x < 0 ? "m" + std::to_string(abs(view.position.x)) : std::to_string(view.position.x)) +
+				"_" + (view.position.y < 0 ? "m" + std::to_string(abs(view.position.y)) : std::to_string(view.position.y)) +
+				"_" + (view.position.z < 0 ? "m" + std::to_string(abs(view.position.z)) : std::to_string(view.position.z)) +
+				"__dir_" + (view.direction.x < 0 ? "m" + std::to_string(abs(view.direction.x)) : std::to_string(view.direction.x)) +
+				"_" + (view.direction.y < 0 ? "m" + std::to_string(abs(view.direction.y)) : std::to_string(view.direction.y)) +
+				"_" + (view.direction.z < 0 ? "m" + std::to_string(abs(view.direction.z)) : std::to_string(view.direction.z)) +
+				"__al_" + std::to_string(view.aliasing);
+			//generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + "rend.png", view.width, view.height, view.aliasing);
+			generateViewPortTexture(filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, 3.5, view.position, view.direction, view.fov, fileName + "text.png", view.width, view.height, view.aliasing);
+		}
+	}
+
+	//generateTexture(obj, light, "D:/testeGeneratorCuda2.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
+	//generateTextureCuda(obj, light, "D:/testeGeneratorCuda3.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
+	//generateViewPort(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeView.png", 4000, 4000, 1);
+	//generateViewPortCuda(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeViewCuda.png", 1024, 1024, 1);
+	//generateViewPort(obj, light, vec3T(0, 0, 100), vec3T(0, 0, -1), 5, "1_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(100, 0, 0), vec3T(-1, 0, 0), 5, "D:/2_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-100, 0, 0), vec3T(1, 0, 0), 5, "D:/3_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(0, 0, -100), vec3T(0, 0, 1), 5, "D:/4_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(75, 0, 75), vec3T(-1, 0, -1), 5, "D:/5_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(75, 0, -75), vec3T(-1, 0, 1), 5, "D:/6_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-75, 0, 75), vec3T(1, 0, -1), 5, "D:/7_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-75, 0, -75), vec3T(1, 0, 1), 5, "D:/8_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-50, -50, -50), vec3T(1, 1, 1), 5, "D:/9_testeView.png", 257, 257, 1);
+	//generateMaps(obj);
+	//generateMapsCuda(obj);	
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(0, 0, 100), vec3T(0, 0, -1), 5, "D:/1_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(100, 0, 0), vec3T(-1, 0, 0), 5, "D:/2_testeViewportTexture2.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-100, 0, 0), vec3T(1, 0, 0), 5, "D:/3_testeViewportTexture2.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(0, 0, -100), vec3T(0, 0, 1), 5, "D:/4_testeViewportTexture2.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(75, 0, 75), vec3T(-1, 0, -1), 5, "D:/5_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(75, 0, -75), vec3T(-1, 0, 1), 5, "D:/6_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-75, 0, 75), vec3T(1, 0, -1), 5, "D:/7_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-75, 0, -75), vec3T(1, 0, 1), 5, "D:/8_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-50, -50, -50), vec3T(1, 1, 1), 5, "D:/9_testeViewportTexture.png", 257, 257, 1);
 
 	return 0;
 }

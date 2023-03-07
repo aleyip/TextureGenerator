@@ -21,14 +21,19 @@ public:
 	/// </summary>
 	vec3<T> rotation;
 
-	cv::Vec4d color;
+	uint8_t specularShininness;
+	cv::Vec<T, 4> color;
 
 	Object() = default;
-	Object(vec3<T> position, vec3<T> rotation, cv::Vec<T,4> color) : position(position), rotation(rotation), color(color) {};
+	Object(vec3<T> position, vec3<T> rotation, cv::Vec<T, 3> color, T specular = .3, uint8_t specularShininness = 32) : position(position), rotation(rotation), color(cv::Vec<T, 4>(color[0], color[1], color[2], specular)), specularShininness(specularShininness) {};
 	virtual ~Object() = default;
 
-	virtual T CheckCollision(RayLight<T> ray);
-	virtual void CheckCollisionCuda(std::vector<T>& out, CudaPointers<T>& cp);
+	virtual T CheckCollision(RayLight<T> ray, vec3<T>& collision, vec3<T>& normal);
+	virtual void CheckCollisionCuda(CudaPointers<T>& cp, int count, int8_t objindex);
+	void Report() {
+		printf("Object: Position: %.2f %.2f %.2f Rotation: %.2f %.2f %.2f Color: %.2f %.2f %.2f\n", position.x, position.y, position.z, rotation.x,
+			rotation.y, rotation.z, color[0], color[1], color[2]);
+	}
 };
 
 #include "Object.cu"
