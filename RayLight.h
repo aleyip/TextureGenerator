@@ -12,6 +12,12 @@ struct vec3 {
 	void normalize() {
 		T norm = x * x + y * y + z * z;
 		if (norm == 1.) return;
+		if (norm == 0) {
+			x = 1;
+			y = 0;
+			z = 0;
+			return;
+		}
 		norm = 1./sqrt(norm);
 		x *= norm;
 		y *= norm;

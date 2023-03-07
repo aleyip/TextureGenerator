@@ -61,6 +61,8 @@ using DirectionalLightT = DirectionalLight<typeT>;
 void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
 	//PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 4.5, 2), cv::Vec<typeT, 3>(1, 1, 1));
 	
+	viewerPos.x *= -1;
+	viewerDir.x *= -1;
 	
 	cv::Mat img = cv::Mat(width * aliasing, height * aliasing, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
@@ -70,7 +72,7 @@ void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T view
 	right.normalize();
 	vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
 	up.normalize();
-
+	printf("Generate View Port\n");
 	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
 	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
 	img.forEach<cv::Vec<typeT, 4>>([&obj, &light, &viewerPos, &viewerDir, img, halfHeight, &right, &up](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
@@ -105,12 +107,14 @@ void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T view
 			for (int i = 0; i < NUMLIGHT; i++)
 				pixel += light[i]->lightEffect(*obj[objsel], collision, normal, viewerPos);
 		}
-		else pixel = cv::Vec4d(0, 0, 0, 0);
+		else pixel = cv::Vec4d(0.5, 0.5, 0.5, 1);
 	});
 
 	cv::resize(img, img, cv::Size(width, height));
 	img.convertTo(img, CV_8UC4, 255, 0);
 	cv::imwrite(nameFile, img);
+
+	img.release();
 }
 
 void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
@@ -124,6 +128,7 @@ void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T 
 	vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
 	up.normalize();
 
+	printf("Generate View Port Cuda\n");
 	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
 	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
 
@@ -173,6 +178,8 @@ void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T 
 	cv::resize(img, img, cv::Size(width, height));
 	img.convertTo(img, CV_8UC4, 255, 0);
 	cv::imwrite(nameFile, img);
+
+	img.release();
 }
 
 void generateTexture(ObjectT** obj, LightT** light, std::string fileName, int usize, int vsize, int ssize, int tsize, int windowSize) {
@@ -181,6 +188,9 @@ void generateTexture(ObjectT** obj, LightT** light, std::string fileName, int us
 
 	int size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+
+	printf("Generate Texture\n");
+	printf("Sizes: u:%d v:%d s:%d t:%d wS:%d\n", usize, vsize, ssize, tsize, windowSize);
 
 	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
 	double halfinc[4];
@@ -307,6 +317,9 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 
 	int size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+
+	printf("Generate Texture Cuda\n");
+	printf("Sizes: u:%d v:%d s:%d t:%d wS:%d\n", usize, vsize, ssize, tsize, windowSize);
 
 	double inc[] = { M_PI * 2. / size[0], M_PI / (size[1] - 1.), M_PI / (size[2] - 1.), M_PI / (size[3] - 1.) };
 
@@ -608,271 +621,188 @@ void generateMapsCuda(ObjectT** obj, std::string fileName, int usize, int vsize,
 
 void generateViewPortTexture(std::string textureFile, int usize, int vsize, int ssize, int tsize, float sphereRadius, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
 
-	for (int i = 0; i < 20; i++)
+	cv::Mat img = cv::Mat(width * aliasing, height * aliasing, CV_64FC4);
+	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
+
+	SphereT sphere = SphereT(vec3T(0, 0, 0), 2 * sphereRadius, cv::Vec<typeT, 3>(0, 0, 0), 0, 0);
+
+	printf("Generate View Port Texture\n");
+
+	viewerDir.normalize();
+	vec3T right = vec3(viewerDir.z, 0., -viewerDir.x);
+	right.normalize();
+	vec3T up = vec3(right.z * viewerDir.y, -right.z * viewerDir.x + right.x * viewerDir.z, -right.x * viewerDir.y);
+	up.normalize();
+
+	cv::Mat texture = cv::imread(textureFile, cv::IMREAD_UNCHANGED);
+	std::cout << texture.size << std::endl;
+
+	printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
+	printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
+	//printf("right: %f, %f, %f\n", right.x, right.y, right.z);
+	//printf("up: %f, %f, %f\n", up.x, up.y, up.z);
+
+	int count = 0;
+	img.forEach<cv::Vec<typeT, 4>>([&](cv::Vec<typeT, 4>& pixel, const int* pos)->void
+		//int pos[2];
+		//for (pos[0] = 0; pos[0] < img.rows; pos[0]++)
+		//	for (pos[1] = 0; pos[1] < img.cols; pos[1]++)
 	{
+		typeT dV = ((1.0 - 2.0 * pos[0] / typeT(img.rows - 1)) * halfHeight);
+		typeT dH = -((2.0 * pos[1] / typeT(img.cols - 1) - 1) * halfHeight);
 
-		cv::Mat img = cv::Mat(width * aliasing, height * aliasing, CV_64FC4);
-		typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
+		vec3T vDaux = vec3T(dH, dV, 1);
+		//printf("vDaux %f %f %f\n", vDaux.x, vDaux.y, vDaux.z);
+		vDaux.normalize();
+		//vec3T vD = vec3T(
+		//	right.x * vDaux.x + up.x * vDaux.y + viewerDir.x * vDaux.z,
+		//	right.y * vDaux.x + up.y * vDaux.y + viewerDir.y * vDaux.z,
+		//	right.z * vDaux.x + up.z * vDaux.y + viewerDir.z * vDaux.z
+		//);
 
-		viewerDir.normalize();
-		vec3T right = vec3(-viewerDir.z, 0., viewerDir.x);
-		right.normalize();
-		vec3T up = vec3(-right.z * viewerDir.y, right.z * viewerDir.x - right.x * viewerDir.z, right.x * viewerDir.y);
-		up.normalize();
+		vec3T vD = vec3T(
+			right.x * vDaux.x + up.x * vDaux.y + viewerDir.x * vDaux.z,
+			right.y * vDaux.x + up.y * vDaux.y + viewerDir.y * vDaux.z,
+			right.z * vDaux.x + up.z * vDaux.y + viewerDir.z * vDaux.z
+		);
 
-		cv::Mat texture = cv::imread(textureFile, cv::IMREAD_UNCHANGED);
-		std::cout << texture.size << std::endl;
-		SphereT sphere = SphereT(vec3T(0, 0, 0), 2 * sphereRadius, cv::Vec<typeT, 3>(0, 0, 0), 0, 0);
+		RayLightT ray = RayLightT(viewerPos, vD);
 
-		printf("Viewer Position: %f, %f, %f\n", viewerPos.x, viewerPos.y, viewerPos.z);
-		printf("Viewer Direction: %f, %f, %f\n", viewerDir.x, viewerDir.y, viewerDir.z);
-		img.forEach<cv::Vec<typeT, 4>>([&](cv::Vec<typeT, 4>& pixel, const int* pos)->void {
-			typeT dV = ((1.0 - 2.0 * pos[0] / typeT(img.rows - 1)) * halfHeight);
-			typeT dH = ((1.0 - 2.0 * pos[1] / typeT(img.cols - 1)) * halfHeight);
+		//printf("ray direction %f %f %f\n", ray.direction.x, ray.direction.y, ray.direction.z);
+		vec3T collision, normal;
+		typeT dist = sphere.CheckCollision(ray, collision, normal);
 
-			vec3T vDaux = vec3T(1, dV, dH);
-			vDaux.normalize();
-			vec3T vD = vec3T(
-				viewerDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
-				viewerDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
-				viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
-			);
+		vD = vD * -1;
+		if (dist >= 0) {
+			count++;
+			double uang, vang;
+			uang = atan2(collision.x, collision.z);
+			vang = asin(collision.y / sphereRadius);
 
-			RayLightT ray = RayLightT(viewerPos, vD);
-			vec3T collision, normal;
-			int objsel = -1;
-			typeT dist = sphere.CheckCollision(ray, collision, normal);
+			//printf("\nrow: %d col: %d\n", pos[0], pos[1]);
+			//printf("ray origin %f %f %f\n", ray.origin.x, ray.origin.y, ray.origin.z);
+			//printf("ray direction %f %f %f\n", ray.direction.x, ray.direction.y, ray.direction.z);
+			//printf("inv ray direction %f %f %f\n", vD.x, vD.y, vD.z);
+			//printf("collision %f %f %f\n", collision.x, collision.y, collision.z);
+			//printf("normal %f %f %f\n", normal.x, normal.y, normal.z);
+			//printf("uang: %f vang: %f\n", uang * 180 / M_PI, vang * 180 / M_PI);
 
-			if (dist >= 0) {
-				double u, v;
-				u = (atan2(collision.x, collision.z) + M_PI) / (2 * M_PI) + double(i)/20;
-				v = (asin(collision.y / sphereRadius) + M_PI_2) / M_PI;
-				if (u < 0) u = 0;
-				if (v < 0) v = 0;
-				if (u > 1) u -= 1;
-				if (v > 1) v = 1;
-				u *= usize;
-				v *= vsize;
+			uang = usize * (uang + M_PI) / (2 * M_PI);
+			vang = (vsize - 1) * (vang + M_PI_2) / M_PI;
 
-				int ur[2], vr[2];
-				ur[1] = ceil(u);
-				ur[0] = ur[1] - 1;
-				vr[1] = ceil(v);
-				vr[0] = vr[1] - 1;
+			int u[2], v[2];
+			u[1] = ceil(uang);
+			u[0] = u[1] - 1;
+			if (u[1] == usize) u[1] = 0;
+			v[1] = ceil(vang);
+			v[0] = v[1] - 1;
 
-				double uw = u - ur[0] / (ur[1] - ur[0]);
-				double vw = v - vr[0] / (vr[1] - vr[0]);
+			double uw = uang - u[0], vw = vang - v[0];
 
-				cv::Vec<typeT, 4> color[4]; //uv , uV, Uv, UV
-				int i = 3;
-				for (int i = 0; i < 4; i++)
-				{
-					int new_u = ur[i / 2];
-					int new_v = vr[i % 2];
-					double uang = 2 * M_PI * ((double)new_u / usize) - M_PI; //[-pi, pi[
-					double vang = M_PI * ((double)new_v / (vsize - 1)) - M_PI_2; //[-pi/2, pi/2]
+			//printf("u: %d %d %f v: %d %d %f\n\n", u[0], u[1], uang, v[0], v[1], vang);
 
-					vec3T versorForward = vec3T(cos(uang) * cos(vang), sin(vang), sin(uang) * cos(vang));
-					versorForward.normalize();
-					//printf("Fw: %.2f %.2f %.2f\n", versorForward.x, versorForward.y, versorForward.z);
-					vec3T versorRight = vec3T(-versorForward.z, 0., versorForward.x);
-					versorRight.normalize();
-					//printf("Rt: %.2f %.2f %.2f\n", versorRight.x, versorRight.y, versorRight.z);
-					vec3T versorUp = vec3T(-versorRight.z * versorForward.y, versorRight.z * versorForward.x - versorRight.x * versorForward.z, versorRight.x * versorForward.y);
-					versorUp.normalize();
-					//printf("Up: %.2f %.2f %.2f\n\n", versorUp.x, versorUp.y, versorUp.z);
+			cv::Vec<typeT, 4> color[4];
+			for (int i = 0; i < 4; i++) { //uv, Uv, uV, UV
+				int u_win = u[i % 2];
+				int v_win = v[i / 2];
+				//printf("i iter %d u: %d v: %d\n", i, u_win, v_win);
+				double uang = 2 * M_PI * u_win / usize - M_PI;
+				double vang = M_PI * v_win / (vsize - 1) - M_PI_2;
+				//printf("i iter %d u: %f v: %f\n", i, uang * 180 / M_PI, vang * 180 / M_PI);
 
-					vec3T P_point = vec3T(
-						versorForward.x * vD.x + versorUp.x * vD.y + versorRight.x * vD.z,
-						versorForward.y * vD.x + versorUp.y * vD.y + versorRight.y * vD.z,
-						versorForward.z * vD.x + versorUp.z * vD.y + versorRight.z * vD.z
-					);
-					P_point.normalize();
+				vec3T versorForward = vec3T(sin(uang) * cos(vang), sin(vang), cos(uang) * cos(vang));
+				versorForward.normalize();
+				//printf("forward %f %f %f\n", versorForward.x, versorForward.y, versorForward.z);
+				vec3T versorRight = vec3T(versorForward.z, 0., -versorForward.x);
+				versorRight.normalize();
+				vec3T versorUp = vec3T(versorRight.z * versorForward.y, -versorRight.z * versorForward.x + versorRight.x * versorForward.z, -versorRight.x * versorForward.y);
+				versorUp.normalize();
+				//printf("right %f %f %f\n", versorRight.x, versorRight.y, versorRight.z);
+				//printf("up %f %f %f\n", versorUp.x, versorUp.y, versorUp.z);
 
-					double sang = (atan(P_point.x / P_point.z) + M_PI_2) / M_PI;
-					double tang = (asin(P_point.y) + M_PI_2) / M_PI;
-					//pixel = cv::Vec<typeT, 4>(abs(versorForward.x), abs(versorForward.y), abs(versorForward.z), 1);
-					//pixel = cv::Vec<typeT, 4>(versorUp.z, -versorUp.z, 0, 1);
-					double s = sang * (ssize - 1);
-					double t = tang * (tsize - 1);
+				vec3T vD_P = vec3T(
+					versorRight.x * vD.x + versorRight.y * vD.y + versorRight.z * vD.z,
+					versorUp.x * vD.x + versorUp.y * vD.y + versorUp.z * vD.z,
+					versorForward.x * vD.x + versorForward.y * vD.y + versorForward.z * vD.z
+				);
+				vD_P.normalize();
+				//printf("new Dir %f %f %f\n", vD_P.x, vD_P.y, vD_P.z);
 
-					int sr[2], tr[2];
-					sr[1] = ceil(s);
-					sr[0] = sr[1] - 1;
-					tr[1] = ceil(t);
-					tr[0] = tr[1] - 1;
+				double sang = atan(vD_P.x / vD_P.z);
+				double tang = asin(vD_P.y);
+				//printf("sang: %f tang: %f\n", sang * 180 / M_PI, tang * 180 / M_PI);
 
-					double sw = s - sr[0] / (sr[1] - sr[0]);
-					double tw = t - tr[0] / (tr[1] - tr[0]);
+				sang = (ssize - 1) * (sang + M_PI_2) / M_PI;
+				tang = (tsize - 1) * (tang + M_PI_2) / M_PI;
 
-					cv::Vec<typeT, 4> color_01 = texture.at<cv::Vec4b>(new_v + vsize * tr[0], new_u + usize * sr[0]); //st
-					color_01 /= 255;
-					//std::cout << "st: " << color_01 << std::endl;
-					//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[0], sr[1], new_v + vsize * tr[0], new_u + usize * sr[1]);
-					cv::Vec<typeT, 4> color_02 = texture.at<cv::Vec4b>(new_v + vsize * tr[0], new_u + usize * sr[1]); //St
-					color_02 /= 255;
-					//std::cout << "St: " << color_02 << std::endl;
-					cv::Vec<typeT, 4> color_11 = color_01 + sw * (color_02 - color_01);  //t
+				int s[2], t[2];
+				s[1] = ceil(sang);
+				s[0] = s[1] - 1;
+				t[1] = ceil(tang);
+				t[0] = t[1] - 1;
+				//printf("s: %d %d %f t: %d %d %f\n\n", s[0], s[1], sang, t[0], t[1], tang);
 
-					//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[1], sr[0], new_v + vsize * tr[1], new_u + usize * sr[0]);
-					color_01 = texture.at<cv::Vec4b>(new_v + vsize * tr[1], new_u + usize * sr[0]); //sT
-					color_01 /= 255;
-					//std::cout << "sT: " << color_01 << std::endl;
-					//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[1], sr[1], new_v + vsize * tr[1], new_u + usize * sr[1]);
-					color_02 = texture.at<cv::Vec4b>(new_v + vsize * tr[1], new_u + usize * sr[1]); //ST
-					color_02 /= 255;
-					//std::cout << "ST: " << color_02 << std::endl;
-					cv::Vec<typeT, 4> color_12 = color_01 + sw * (color_02 - color_01);  //T
+				double sw = sang - s[0], tw = tang - t[0];
 
-					if (pos[0] == 2000 && pos[1] == 2000) {
-						printf("uvst: %d %d %d %d\n", new_u, new_v, sr[0], tr[0]);
-					}
 
-					color[i] = color_11 + tw * (color_12 - color_11);
-				}
+				cv::Vec<typeT, 4> color_01 = texture.at<cv::Vec4b>(v_win + vsize * t[0], u_win + usize * s[0]); //st
+				color_01 /= 255;
+				cv::Vec<typeT, 4> color_02 = texture.at<cv::Vec4b>(v_win + vsize * t[0], u_win + usize * s[1]); //St
+				color_02 /= 255;
+				cv::Vec<typeT, 4> color_11 = color_01 + sw * (color_02 - color_01);  //t
 
-				cv::Vec<typeT, 4> color_21 = color[0] + uw * (color[2] - color[0]);  // uv - Uv
-				cv::Vec<typeT, 4> color_22 = color[1] + uw * (color[3] - color[1]);  // uV - UV
-				cv::Vec<typeT, 4> final_color = color_21 + vw * (color_22 - color_21);
-				pixel = cv::Vec<typeT, 4>(final_color[3] * final_color[0] + (1 - final_color[3]) * .5,
-					final_color[3] * final_color[1] + (1 - final_color[3]) * .5,
-					final_color[3] * final_color[2] + (1 - final_color[3]) * .5,
-					1);
+				color_01 = texture.at<cv::Vec4b>(v_win + vsize * t[1], u_win + usize * s[0]); //sT
+				color_01 /= 255;
+				color_02 = texture.at<cv::Vec4b>(v_win + vsize * t[1], u_win + usize * s[1]); //ST
+				color_02 /= 255;
+				cv::Vec<typeT, 4> color_12 = color_01 + sw * (color_02 - color_01);  //T
+
+				color[i] = color_11 + tw * (color_12 - color_11);
 			}
-			else pixel = cv::Vec4d(.5, .5, .5, 1);
-		});
-		//int count = 0;
-		//for(int i = 0; i < img.rows; i++)
-		//	for (int j = 0; j < img.cols; j++)
-		//	{
-		//		typeT dV = ((1.0 - 2.0 * j / typeT(img.rows - 1)) * halfHeight);
-		//		typeT dH = ((1.0 - 2.0 * i / typeT(img.cols - 1)) * halfHeight);
 
-		//		vec3T vDaux = vec3T(1, dV, dH);
-		//		vDaux.normalize();
-		//		vec3T vD = vec3T(
-		//			viewerDir.x * vDaux.x + up.x * vDaux.y + right.x * vDaux.z,
-		//			viewerDir.y * vDaux.x + up.y * vDaux.y + right.y * vDaux.z,
-		//			viewerDir.z * vDaux.x + up.z * vDaux.y + right.z * vDaux.z
-		//		);
-		//		vD.normalize();
+			cv::Vec<typeT, 4> color_21 = color[0] + uw * (color[1] - color[0]);  // uv - Uv
+			cv::Vec<typeT, 4> color_22 = color[2] + uw * (color[3] - color[2]);  // uV - UV
+			cv::Vec<typeT, 4> final_color = color_21 + vw * (color_22 - color_21);
+			pixel = cv::Vec<typeT, 4>(final_color[3] * final_color[0] + (1 - final_color[3]) * .5,
+				final_color[3] * final_color[1] + (1 - final_color[3]) * .5,
+				final_color[3] * final_color[2] + (1 - final_color[3]) * .5,
+				1);
+		}
+		else pixel = cv::Vec4d(.5, .5, .5, 1);
+	});
 
-		//		RayLightT ray = RayLightT(viewerPos, vD);
-		//		vec3T collision, normal;
-		//		int objsel = -1;
-		//		typeT dist = sphere.CheckCollision(ray, collision, normal);
+	std::cout << "Count Collision: " << count << std::endl;
+	cv::resize(img, img, cv::Size(width, height), 0, 0, cv::INTER_AREA);
+	img.convertTo(img, CV_8UC4, 255, 0);
+	cv::imwrite(nameFile, img);
+	std::cout << std::endl << std::endl;
 
-		//		if (dist >= 0) {
-		//			double u, v;
-		//			vec3T dir = vD;
-
-		//			u = (atan2(collision.x, collision.z) + M_PI) / (2 * M_PI);
-		//			v = (asin(collision.y / sphereRadius) + M_PI_2) / M_PI;
-		//			if (u < 0) u = 0;
-		//			if (v < 0) v = 0;
-		//			if (u > 1) u = 1;
-		//			if (v > 1) v = 1;
-		//			u *= usize;
-		//			v *= vsize;
-
-		//			int ur[2], vr[2];
-		//			ur[1] = (int)ceil(u);
-		//			ur[0] = ur[1] - 1;
-		//			vr[1] = (int)ceil(v);
-		//			vr[0] = vr[1] - 1;
-
-		//			double uw = (u - ur[0]) / (ur[1] - ur[0]);
-		//			double vw = (v - vr[0]) / (vr[1] - vr[0]);
-
-		//			cv::Vec<typeT, 4> color[4]; //uv , uV, Uv, UV
-		//			for (int i = 0; i < 4; i++)
-		//			{
-		//				int new_u = ur[i / 2];
-		//				int new_v = vr[i % 2];
-		//				double uang = 2 * M_PI * ((double)new_u / usize) - M_PI; //[-pi, pi[
-		//				double vang = M_PI * ((double)new_v / (vsize - 1)) - M_PI_2; //[-pi/2, pi/2]
-
-		//				vec3T versorForward = vec3T(cos(uang) * cos(vang), sin(vang), sin(uang) * cos(vang));
-		//				versorForward.normalize();
-
-		//				vec3T versorRight = vec3(-versorForward.z, 0., versorForward.x);
-		//				versorRight.normalize();
-		//				vec3T versorUp = vec3(-right.z * versorForward.y, right.z * versorForward.x - right.x * versorForward.z, right.x * versorForward.y);
-		//				versorUp.normalize();
-
-		//				vec3T P_point = vec3T(
-		//					versorForward.x * dir.x + versorUp.x * dir.y + versorRight.x * dir.z,
-		//					versorForward.y * dir.x + versorUp.y * dir.y + versorRight.y * dir.z,
-		//					versorForward.z * dir.x + versorUp.z * dir.y + versorRight.z * dir.z
-		//				);
-
-		//				double sang = (atan(-P_point.x / P_point.z) + M_PI_2) / M_PI;
-		//				double tang = (asin(P_point.y) + M_PI_2) / M_PI;
-
-		//				if (sang < 0) sang = 0;
-		//				if (tang < 0) tang = 0;
-		//				if (sang > 1) sang = 1;
-		//				if (tang > 1) tang = 1;
-		//				double s = sang * (ssize - 1);
-		//				double t = tang * (tsize - 1);
-		//				//s = 16;
-		//				//t = 16;
-
-		//				int sr[2], tr[2];
-		//				sr[1] = (int)ceil(s);
-		//				sr[0] = sr[1] - 1;
-		//				tr[1] = (int)ceil(t);
-		//				tr[0] = tr[1] - 1;
-
-		//				double sw = (s - sr[0]) / (sr[1] - sr[0]);
-		//				double tw = (t - tr[0]) / (tr[1] - tr[0]);
-
-		//				//std::cout << "sw: " << sw << " tw:" << tw << std::endl;
-		//				//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[0], sr[0], new_v + vsize * tr[0], new_u + usize * sr[0]);
-
-		//				cv::Vec<typeT, 4> color_01 = texture.at<cv::Vec4b>(new_v + vsize * tr[0], new_u + usize * sr[0]); //st
-		//				color_01 /= 255;
-		//				//std::cout << "st: " << color_01 << std::endl;
-		//				//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[0], sr[1], new_v + vsize * tr[0], new_u + usize * sr[1]);
-		//				cv::Vec<typeT, 4> color_02 = texture.at<cv::Vec4b>(new_v + vsize * tr[0], new_u + usize * sr[1]); //St
-		//				color_02 /= 255;
-		//				//std::cout << "St: " << color_02 << std::endl;
-		//				cv::Vec<typeT, 4> color_11 = color_01 + sw * (color_02 - color_01);  //t
-
-		//				//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[1], sr[0], new_v + vsize * tr[1], new_u + usize * sr[0]);
-		//				color_01 = texture.at<cv::Vec4b>(new_v + vsize * tr[1], new_u + usize * sr[0]); //sT
-		//				color_01 /= 255;
-		//				//std::cout << "sT: " << color_01 << std::endl;
-		//				//printf("uvst: %d %d %d %d %d %d", new_u, new_v, tr[1], sr[1], new_v + vsize * tr[1], new_u + usize * sr[1]);
-		//				color_02 = texture.at<cv::Vec4b>(new_v + vsize * tr[1], new_u + usize * sr[1]); //ST
-		//				color_02 /= 255;
-		//				//std::cout << "ST: " << color_02 << std::endl;
-		//				cv::Vec<typeT, 4> color_12 = color_01 + sw * (color_02 - color_01);  //T
-
-
-		//				//std::cout << "t: " << color_11 << std::endl;
-		//				//std::cout << "T: " << color_12 << std::endl;
-
-		//				color[i] = color_11 + tw * (color_12 - color_11);
-
-		//				//std::cout << "int: " << i << " " << color[i] << std::endl;
-		//			}
-
-		//			cv::Vec<typeT, 4> color_21 = color[0] + uw * (color[2] - color[0]);  // uv - Uv
-		//			cv::Vec<typeT, 4> color_22 = color[1] + uw * (color[3] - color[1]);  // uV - UV
-		//			img.at < cv::Vec<typeT, 4>>(j, i) = color_21 + vw * (color_22 - color_21);
-		//			count++;
-		//		}
-		//		else img.at<cv::Vec<typeT, 4>>(j, i) = cv::Vec4d(0, 0, 0, 0);
-		//	}
-		//std::cout << count << std::endl;
-		cv::resize(img, img, cv::Size(width, height));
-		img.convertTo(img, CV_8UC4, 255, 0);
-		cv::imwrite(nameFile + std::to_string(i) + ".png", img);
-	}
+	img.release();
+	texture.release();
 }
 
-int main()
+struct experiment{
+	int usize;
+	int vsize;
+	int ssize;
+	int tsize;
+
+	int windowSize;
+	experiment(int usize, int vsize, int ssize, int tsize, int ws) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), windowSize(ws) {};
+} ;
+
+struct viewer {
+	vec3T position;
+	vec3T direction;
+	int width;
+	int height;
+	double fov;
+	int aliasing;
+	viewer(vec3T pos, vec3T dir, int width, int height, double fov, int alias) :position(pos), direction(dir), width(width), height(height), fov(fov), aliasing(alias) {};
+};
+
+
+int main(int argc, char *argv[])
 {
 	ObjectT* obj[NUMOBJ];
 	obj[0] = new SphereT(vec3T(0, 0, 0), 1, cv::Vec<typeT, 3>(1, 1, 1), specPower, specShiny);
@@ -886,14 +816,106 @@ int main()
 	LightT* light[NUMLIGHT];
 	light[0] = new DirectionalLightT(vec3T(-6, 0, 0), vec3T(1, 1, 1));
 
+	// < 2^31
+	std::vector<experiment> expList = { 
+		experiment(512,256,32,32,0),
+		experiment(512,256,32,32,3),
+		experiment(512,256,32,32,0),
+		experiment(512,256,32,32,3),
+		experiment(64,32,256,256,0),
+		experiment(64,32,256,256,3),
+		experiment(64,32,256,256,0),
+		experiment(64,32,256,256,3),
+		experiment(512,256,64,64,0),
+		experiment(512,256,64,64,3),
+		experiment(1024,512,64,32,0),
+		experiment(1024,512,64,32,3), 
+	};
+
+	std::vector<viewer> viewList = {
+		viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+		viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+		viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+
+		viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,1),
+
+		viewer(vec3T(0, 10, 0),vec3T(0,-1, 0),512,512,60,1),
+		viewer(vec3T(0, -10, 0),vec3T(0, 1, 0),512,512,60,1),
+
+		//viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+		//viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+		//viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+
+		//viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,5),
+	};
+
+	//std::string filePaste = "D:/teste/generator/";
+	std::string filePaste = argv[1];
+
+	for (int i = 0; i < expList.size(); i++) {
+	//for (int i = 0; i < 1; i++) {
+		std::cout << "Experiment " << i << std::endl;
+		experiment exp = expList[i];
+		std::string textureName = "texture_u" + std::to_string(exp.usize) + "_v" + std::to_string(exp.vsize) +
+			"_s" + std::to_string(exp.ssize) + "_t" + std::to_string(exp.tsize) + "_ws" + std::to_string(exp.windowSize) + ".png";
+		//generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
+
+		for (int j = 0; j < viewList.size(); j++) {
+			std::cout << "Viewer " << j << std::endl;
+			viewer view = viewList[j];
+			std::string fileName = filePaste + textureName +
+				"__pos_" + (view.position.x < 0 ? "m" + std::to_string(abs(view.position.x)) : std::to_string(view.position.x)) +
+				"_" + (view.position.y < 0 ? "m" + std::to_string(abs(view.position.y)) : std::to_string(view.position.y)) +
+				"_" + (view.position.z < 0 ? "m" + std::to_string(abs(view.position.z)) : std::to_string(view.position.z)) +
+				"__dir_" + (view.direction.x < 0 ? "m" + std::to_string(abs(view.direction.x)) : std::to_string(view.direction.x)) +
+				"_" + (view.direction.y < 0 ? "m" + std::to_string(abs(view.direction.y)) : std::to_string(view.direction.y)) +
+				"_" + (view.direction.z < 0 ? "m" + std::to_string(abs(view.direction.z)) : std::to_string(view.direction.z)) +
+				"__al_" + std::to_string(view.aliasing);
+			//generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + "rend.png", view.width, view.height, view.aliasing);
+			generateViewPortTexture(filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, 3.5, view.position, view.direction, view.fov, fileName + "text.png", view.width, view.height, view.aliasing);
+		}
+	}
+
 	//generateTexture(obj, light, "D:/testeGeneratorCuda2.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
 	//generateTextureCuda(obj, light, "D:/testeGeneratorCuda3.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
 	//generateViewPort(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeView.png", 4000, 4000, 1);
 	//generateViewPortCuda(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeViewCuda.png", 1024, 1024, 1);
-	//generateViewPort(obj, light, vec3T(12, 0, 0), vec3T(-1, 0, 0), 90, "D:/testeView2.png", 1024, 1024, 1);
+	//generateViewPort(obj, light, vec3T(0, 0, 100), vec3T(0, 0, -1), 5, "1_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(100, 0, 0), vec3T(-1, 0, 0), 5, "D:/2_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-100, 0, 0), vec3T(1, 0, 0), 5, "D:/3_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(0, 0, -100), vec3T(0, 0, 1), 5, "D:/4_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(75, 0, 75), vec3T(-1, 0, -1), 5, "D:/5_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(75, 0, -75), vec3T(-1, 0, 1), 5, "D:/6_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-75, 0, 75), vec3T(1, 0, -1), 5, "D:/7_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-75, 0, -75), vec3T(1, 0, 1), 5, "D:/8_testeView.png", 257, 257, 1);
+	//generateViewPort(obj, light, vec3T(-50, -50, -50), vec3T(1, 1, 1), 5, "D:/9_testeView.png", 257, 257, 1);
 	//generateMaps(obj);
 	//generateMapsCuda(obj);	
-	generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeViewportTexture.png", 4000, 4000, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(0, 0, 100), vec3T(0, 0, -1), 5, "D:/1_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(100, 0, 0), vec3T(-1, 0, 0), 5, "D:/2_testeViewportTexture2.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-100, 0, 0), vec3T(1, 0, 0), 5, "D:/3_testeViewportTexture2.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(0, 0, -100), vec3T(0, 0, 1), 5, "D:/4_testeViewportTexture2.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(75, 0, 75), vec3T(-1, 0, -1), 5, "D:/5_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(75, 0, -75), vec3T(-1, 0, 1), 5, "D:/6_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-75, 0, 75), vec3T(1, 0, -1), 5, "D:/7_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-75, 0, -75), vec3T(1, 0, 1), 5, "D:/8_testeViewportTexture.png", 257, 257, 1);
+	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-50, -50, -50), vec3T(1, 1, 1), 5, "D:/9_testeViewportTexture.png", 257, 257, 1);
 
 	return 0;
 }

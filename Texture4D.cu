@@ -261,6 +261,9 @@ void Texture4D<T>::compileToImage(std::string s) {
 	name = s.substr(indexfirst, indexlast - indexfirst);
 	std::cout << "Gerando arquivo: " << name << std::endl;
 	cv::imwrite(s, out);
+
+	img.release();
+	out.release();
 }
 
 template <class T>
