@@ -36,7 +36,7 @@ __device__ void normalize(T* vec) {
 }
 
 template<class T>
-__global__ void raylightgenerator_kernel(T* out, int start, int* size, const T radius, const int wsTotal) {
+__global__ void raylightgenerator_kernel(T* out, size_t start, int* size, const T radius, const int wsTotal) {
 	int globalIndex = start + blockIdx.x;
 	int u, v, s, t;
 	int ws = gridDim.y;
@@ -96,7 +96,7 @@ __global__ void raylightgenerator_kernel(T* out, int start, int* size, const T r
 }
 
 template<class T>
-cudaError_t RayLightGenerator_wrapper(int start, int length, int* size, T radius, int ws, int wsTotal, CudaPointers<T>& cp) {
+cudaError_t RayLightGenerator_wrapper(size_t start, size_t length, int* size, T radius, int ws, int wsTotal, CudaPointers<T>& cp) {
 	cudaError_t cudaStatus;
 
 	//auto start = std::chrono::steady_clock::now();
@@ -238,36 +238,38 @@ void Texture4D<T>::compileToVideo(std::string s) {
 }
 
 template <class T>
-void Texture4D<T>::compileToImage(std::string s) {
-	cv::Mat out = cv::Mat(vsize * tsize, usize * ssize, CV_8UC4);
+void Texture4D<T>::compileToImage(std::string s, int subimg) {
+	//cv::Mat out = cv::Mat(vsize * tsize, usize * ssize, CV_8UC4);
 
 	cv::Mat img;
 	texture.convertTo(img, CV_8UC4, 255);
 
 	std::cout << "Inicio Gerando Imagem da Textura" << std::endl;
 
-#pragma omp parallel for collapse(4)
-	for (int t = 0; t < tsize; t++)
-		for (int s = 0; s < ssize; s++)
-			for (int v = 0; v < vsize; v++)
-				for (int u = 0; u < usize; u++)
-				{
-					out.at<cv::Vec4b>(v + vsize * t,u + usize * s) = img.at<cv::Vec4b>(getCoord(u, v, s, t));
-				}
+//#pragma omp parallel for collapse(4)
+//	for (int t = 0; t < tsize; t++)
+//		for (int s = 0; s < ssize; s++)
+//			for (int v = 0; v < vsize; v++)
+//				for (int u = 0; u < usize; u++)
+//				{
+//					out.at<cv::Vec4b>(v + vsize * t,u + usize * s) = img.at<cv::Vec4b>(getCoord(u, v, s, t));
+//				}
 
 	std::string name;
 	size_t indexfirst = s.find_last_of('\\') + 1;
 	size_t indexlast = s.find_last_of('.');
 	name = s.substr(indexfirst, indexlast - indexfirst);
 	std::cout << "Gerando arquivo: " << name << std::endl;
-	cv::imwrite(s, out);
+	name = s.substr(0, indexlast);
+	name += "_" + std::to_string(subimg) + ".png";
+	cv::imwrite(name, img);
 
-	img.release();
-	out.release();
+	//img.release();
+	//out.release();
 }
 
 template <class T>
-void Texture4D<T>::RayLightGeneratorCuda(int start, int length, T radius, int ws, int wsTotal, CudaPointers<T> &cp) {
+void Texture4D<T>::RayLightGeneratorCuda(size_t start, size_t length, T radius, int ws, int wsTotal, CudaPointers<T> &cp) {
 	int size[] = { usize, vsize, ssize, tsize };
 
 	cudaError_t cudaStatus = RayLightGenerator_wrapper<T>(start, length, size, radius, ws, wsTotal, cp);

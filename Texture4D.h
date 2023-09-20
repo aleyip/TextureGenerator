@@ -19,7 +19,7 @@ public:
 	int* d_size = 0;
 
 	Texture4D(size_t usize, size_t vsize, size_t ssize, size_t tsize) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), totalSize(usize* vsize* ssize* tsize) {
-		texture = cv::Mat::zeros(totalSize, 1, CV_64FC4);
+		texture = cv::Mat::zeros(16384, 16384, CV_64FC4);
 	}
 	~Texture4D() {
 		texture.release();
@@ -43,8 +43,8 @@ public:
 
 	void compileToVideo(std::string s);
 
-	void compileToImage(std::string s);
+	void compileToImage(std::string s, int subimage = 0);
 
-	void RayLightGeneratorCuda(int start, int length, T radius, int ws, int wsTotal, CudaPointers<T>& cp);
+	void RayLightGeneratorCuda(size_t start, size_t length, T radius, int ws, int wsTotal, CudaPointers<T>& cp);
 };
 

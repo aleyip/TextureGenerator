@@ -47,7 +47,7 @@ public:
 	void uploadObjectColorProp(cv::Vec<T, 4>* colorList, uint8_t *shinyList, int length);
 
 	void pixelReduction(int wsTotal, int count);
-	void downloadPixelColor(cv::Vec<T, 4>* data, int count);
+	void downloadPixelColor(cv::Vec<T, 4>* data, int count, int start = 0);
 	
 	void allocate(int totalSize, int usize, int vsize, int ssize, int tsize);
 	void free();

@@ -312,8 +312,8 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 	const int ws = windowSize * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
-	const int bufferSize = BUFFERSIZE / wsTotal;
-	const int totalSize = usize * vsize * ssize * tsize;
+	const size_t bufferSize = BUFFERSIZE / wsTotal;
+	const size_t totalSize = usize * vsize * ssize * tsize;
 
 	int size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
@@ -327,7 +327,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 
 	typeT denom = 1. / wsTotal;
 	std::cout << "Denominador: " << denom << std::endl;
-
+	std::cout << "FileName: " << fileName << std::endl;
 	CudaPointersT cp;
 	cp.allocate(bufferSize * wsTotal, usize, vsize, ssize, tsize);
 	{
@@ -342,12 +342,15 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
 
 	std::cout << "Compile texture" << std::endl;
-	int countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
-	int length = bufferSize;
+	size_t countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+	size_t length = bufferSize;
 	if (totalSize - countLoop < bufferSize)
 		length = totalSize - countLoop;
-	int bufferTotal;
+	size_t bufferTotal;
 	cv::Vec<typeT, 4>* dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
+
+	int nImage = tex.totalSize / 268435456;
+	size_t indexCopy = 0;
 
 	while (countLoop < totalSize)
 	{
@@ -355,7 +358,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 
 		bufferTotal = length * wsTotal;
 
-		std::cout << countLoop << "/" << totalSize << std::endl;
+		std::cout << countLoop << "/" << totalSize << " " << (double)countLoop / totalSize << "%" << std::endl;
 
 		tex.RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
 
@@ -370,14 +373,30 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 			light[j]->addLightEffectsCUDA(cp, bufferTotal);
 
 		cp.pixelReduction(wsTotal, length);
-		cp.downloadPixelColor(dataPixel, length);
+
+		indexCopy += length;
+		if (indexCopy > 268435456)
+		{
+			size_t dif = 268435456 - indexCopy;
+			cp.downloadPixelColor(dataPixel, dif);
+			tex.compileToImage(fileName,nImage);
+			nImage++;
+			dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
+			cp.downloadPixelColor(dataPixel, length - dif, dif);
+			dataPixel += (length - dif);
+			indexCopy = 0;
+		}
+		else
+		{
+			cp.downloadPixelColor(dataPixel, length);
+			dataPixel += length;
+		}
 
 		auto end = std::chrono::steady_clock::now();
 		std::cout << " Compare Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
 			<< " ms" << std::endl;
 		//return;
-		dataPixel += length;
 		countLoop += length;
 		if (totalSize - countLoop < bufferSize)
 			length = totalSize - countLoop;
@@ -817,19 +836,20 @@ int main(int argc, char *argv[])
 	light[0] = new DirectionalLightT(vec3T(-6, 0, 0), vec3T(1, 1, 1));
 
 	// < 2^31
-	std::vector<experiment> expList = { 
-		experiment(512,256,32,32,0),
-		experiment(512,256,32,32,3),
-		experiment(512,256,32,32,0),
-		experiment(512,256,32,32,3),
-		experiment(64,32,256,256,0),
-		experiment(64,32,256,256,3),
-		experiment(64,32,256,256,0),
-		experiment(64,32,256,256,3),
-		experiment(512,256,64,64,0),
+	std::vector<experiment> expList = {
+		//experiment(512,256,32,32,0),
 		experiment(512,256,64,64,3),
-		experiment(1024,512,64,32,0),
-		experiment(1024,512,64,32,3), 
+		//experiment(512,256,32,32,3),
+		//experiment(512,256,32,32,0),
+		//experiment(512,256,32,32,3),
+		//experiment(64,32,256,256,0),
+		//experiment(64,32,256,256,3),
+		//experiment(64,32,256,256,0),
+		//experiment(64,32,256,256,3),
+		//experiment(512,256,64,64,0),
+		//experiment(512,256,64,64,3),
+		//experiment(1024,512,64,32,0),
+		//experiment(1024,512,64,32,3), 
 	};
 
 	std::vector<viewer> viewList = {
@@ -874,22 +894,22 @@ int main(int argc, char *argv[])
 		experiment exp = expList[i];
 		std::string textureName = "texture_u" + std::to_string(exp.usize) + "_v" + std::to_string(exp.vsize) +
 			"_s" + std::to_string(exp.ssize) + "_t" + std::to_string(exp.tsize) + "_ws" + std::to_string(exp.windowSize) + ".png";
-		//generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
+		generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
 
-		for (int j = 0; j < viewList.size(); j++) {
-			std::cout << "Viewer " << j << std::endl;
-			viewer view = viewList[j];
-			std::string fileName = filePaste + textureName +
-				"__pos_" + (view.position.x < 0 ? "m" + std::to_string(abs(view.position.x)) : std::to_string(view.position.x)) +
-				"_" + (view.position.y < 0 ? "m" + std::to_string(abs(view.position.y)) : std::to_string(view.position.y)) +
-				"_" + (view.position.z < 0 ? "m" + std::to_string(abs(view.position.z)) : std::to_string(view.position.z)) +
-				"__dir_" + (view.direction.x < 0 ? "m" + std::to_string(abs(view.direction.x)) : std::to_string(view.direction.x)) +
-				"_" + (view.direction.y < 0 ? "m" + std::to_string(abs(view.direction.y)) : std::to_string(view.direction.y)) +
-				"_" + (view.direction.z < 0 ? "m" + std::to_string(abs(view.direction.z)) : std::to_string(view.direction.z)) +
-				"__al_" + std::to_string(view.aliasing);
-			//generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + "rend.png", view.width, view.height, view.aliasing);
-			generateViewPortTexture(filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, 3.5, view.position, view.direction, view.fov, fileName + "text.png", view.width, view.height, view.aliasing);
-		}
+		//for (int j = 0; j < viewList.size(); j++) {
+		//	std::cout << "Viewer " << j << std::endl;
+		//	viewer view = viewList[j];
+		//	std::string fileName = filePaste + textureName +
+		//		"__pos_" + (view.position.x < 0 ? "m" + std::to_string(abs(view.position.x)) : std::to_string(view.position.x)) +
+		//		"_" + (view.position.y < 0 ? "m" + std::to_string(abs(view.position.y)) : std::to_string(view.position.y)) +
+		//		"_" + (view.position.z < 0 ? "m" + std::to_string(abs(view.position.z)) : std::to_string(view.position.z)) +
+		//		"__dir_" + (view.direction.x < 0 ? "m" + std::to_string(abs(view.direction.x)) : std::to_string(view.direction.x)) +
+		//		"_" + (view.direction.y < 0 ? "m" + std::to_string(abs(view.direction.y)) : std::to_string(view.direction.y)) +
+		//		"_" + (view.direction.z < 0 ? "m" + std::to_string(abs(view.direction.z)) : std::to_string(view.direction.z)) +
+		//		"__al_" + std::to_string(view.aliasing);
+		//	//generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + "rend.png", view.width, view.height, view.aliasing);
+		//	generateViewPortTexture(filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, 3.5, view.position, view.direction, view.fov, fileName + "text.png", view.width, view.height, view.aliasing);
+		//}
 	}
 
 	//generateTexture(obj, light, "D:/testeGeneratorCuda2.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
