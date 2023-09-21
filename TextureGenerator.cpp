@@ -342,15 +342,15 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
 
 	std::cout << "Compile texture" << std::endl;
-	size_t countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
-	size_t length = bufferSize;
+	static size_t countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+	static size_t length = bufferSize;
 	if (totalSize - countLoop < bufferSize)
 		length = totalSize - countLoop;
-	size_t bufferTotal;
+	static size_t bufferTotal;
 	cv::Vec<typeT, 4>* dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
 
 	int nImage = tex.totalSize / 268435456;
-	size_t indexCopy = 0;
+	static size_t indexCopy = 0;
 
 	while (countLoop < totalSize)
 	{
@@ -392,10 +392,10 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 			dataPixel += length;
 		}
 
-		auto end = std::chrono::steady_clock::now();
-		std::cout << " Compare Elapsed time in milliseconds: "
-			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-			<< " ms" << std::endl;
+		//auto end = std::chrono::steady_clock::now();
+		//std::cout << " Compare Elapsed time in milliseconds: "
+		//	<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+		//	<< " ms" << std::endl;
 		//return;
 		countLoop += length;
 		if (totalSize - countLoop < bufferSize)
