@@ -308,15 +308,23 @@ void generateTexture(ObjectT** obj, LightT** light, std::string fileName, int us
 	}
 }
 
-void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, int usize, int vsize, int ssize, int tsize, int windowSize) {
+static size_t countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+static size_t length = 0;
+static size_t bufferTotal = 0;
+static size_t indexCopy = 0;
+static size_t bufferSize = 0;
+static size_t totalSize = 0;
+
+void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, size_t usize, size_t vsize, size_t ssize, size_t tsize, int windowSize) {
 	const int ws = windowSize * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
-	const size_t bufferSize = BUFFERSIZE / wsTotal;
-	const size_t totalSize = usize * vsize * ssize * tsize;
+	bufferSize = BUFFERSIZE / wsTotal;
+	totalSize = usize * vsize * ssize * tsize;
 
-	int size[] = { usize,vsize,ssize,tsize };
+	size_t size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+	std::cout << tex.texture.total() << std::endl;
 
 	printf("Generate Texture Cuda\n");
 	printf("Sizes: u:%d v:%d s:%d t:%d wS:%d\n", usize, vsize, ssize, tsize, windowSize);
@@ -342,15 +350,15 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 	std::cout << "Allocate: " << bufferSize * wsTotal << std::endl;
 
 	std::cout << "Compile texture" << std::endl;
-	static size_t countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
-	static size_t length = bufferSize;
+	countLoop = 0;//size[3] * (size[2] * (size[1] * 0 + 0) + 16) + 16;
+	length = bufferSize;
 	if (totalSize - countLoop < bufferSize)
 		length = totalSize - countLoop;
-	static size_t bufferTotal;
 	cv::Vec<typeT, 4>* dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
 
-	int nImage = tex.totalSize / 268435456;
-	static size_t indexCopy = 0;
+	int totalImage = tex.totalSize / 268435456;
+	int nImage = 0;
+	indexCopy = 0;
 
 	while (countLoop < totalSize)
 	{
@@ -375,21 +383,20 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 		cp.pixelReduction(wsTotal, length);
 
 		indexCopy += length;
-		if (indexCopy > 268435456)
+		if (indexCopy > tex.texture.total())
 		{
-			size_t dif = 268435456 - indexCopy;
-			cp.downloadPixelColor(dataPixel, dif);
-			tex.compileToImage(fileName,nImage);
+			size_t dif = bufferSize - (indexCopy - tex.texture.total());
+			cp.downloadPixelColor(dataPixel, 10);
+			tex.compileToImage(fileName, nImage);
 			nImage++;
 			dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
 			cp.downloadPixelColor(dataPixel, length - dif, dif);
-			dataPixel += (length - dif);
+			dataPixel -= dif;
 			indexCopy = 0;
 		}
 		else
 		{
 			cp.downloadPixelColor(dataPixel, length);
-			dataPixel += length;
 		}
 
 		//auto end = std::chrono::steady_clock::now();
@@ -399,7 +406,10 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 		//return;
 		countLoop += length;
 		if (totalSize - countLoop < bufferSize)
+		{
 			length = totalSize - countLoop;
+		}
+		dataPixel += length;
 	} 
 	//delete& dist;
 	//delete& objSel;
@@ -410,7 +420,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, in
 	{
 		auto start = std::chrono::steady_clock::now();
 		//tex.compileToUnity("D:\\testeGeneratorCuda.asset");
-		tex.compileToImage(fileName);
+		tex.compileToImage(fileName,nImage);
 		auto end = std::chrono::steady_clock::now();
 		std::cout << "Elapsed time in milliseconds: "
 			<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
@@ -838,7 +848,11 @@ int main(int argc, char *argv[])
 	// < 2^31
 	std::vector<experiment> expList = {
 		//experiment(512,256,32,32,0),
-		experiment(512,256,64,64,3),
+		//experiment(128,64,16,16,3),
+		experiment(512,256,64,64,0),
+		//experiment(512,256,128,128,3),
+		//experiment(1024,512,64,64,3),
+		//experiment(1024,512,128,128,3),
 		//experiment(512,256,32,32,3),
 		//experiment(512,256,32,32,0),
 		//experiment(512,256,32,32,3),

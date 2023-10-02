@@ -240,7 +240,7 @@ void Texture4D<T>::compileToVideo(std::string s) {
 template <class T>
 void Texture4D<T>::compileToImage(std::string s, int subimg) {
 	//cv::Mat out = cv::Mat(vsize * tsize, usize * ssize, CV_8UC4);
-
+	std::cout << "Hello from compiletoImage" << std::endl;
 	cv::Mat img;
 	texture.convertTo(img, CV_8UC4, 255);
 
