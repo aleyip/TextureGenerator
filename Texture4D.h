@@ -25,6 +25,11 @@ public:
 		texture.release();
 	}
 
+	Texture4D(std::string fileName, size_t usize, size_t vsize, size_t ssize, size_t tsize) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), totalSize(usize* vsize* ssize* tsize) {
+		texture = cv::imread(fileName, cv::IMREAD_UNCHANGED);
+		std::cout << fileName << " " << texture.rows << std::endl;
+	}
+
 	inline size_t getCoord(const size_t u, const size_t v, const size_t s, const size_t t) {
 		return tsize * (ssize * (vsize * u + v) + s) + t;
 	}
