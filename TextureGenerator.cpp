@@ -798,10 +798,6 @@ void generateViewPortTexture(std::string textureFile, uint usize, uint vsize, ui
 						{
 							color_01 = texture.texture.at<cv::Vec4b>(coord);
 							color_01 /= 255;
-							if (pos[0] == 250 && pos[1] == 128)
-								std::cout << "Check 1 " << coord << " " << u_win << " " << v_win << " " << s[0] << " " << t[0] << " " << color_01 << std::endl;
-							if (pos[0] == 261 && pos[1] == 383)
-								std::cout << "Check 2 " << coord << " " << u_win << " " << v_win << " " << s[0] << " " << t[0] << " " << color_01 << std::endl;
 						}
 						else
 							color_01 = cv::Vec<typeT, 4>(0, 0, 0, 0);
@@ -811,10 +807,6 @@ void generateViewPortTexture(std::string textureFile, uint usize, uint vsize, ui
 						{
 							color_02 = texture.texture.at<cv::Vec4b>(coord);
 							color_02 /= 255;
-							if (pos[0] == 250 && pos[1] == 128)
-								std::cout << "Check 1 " << coord << " " << u_win << " " << v_win << " " << s[1] << " " << t[0] << " " << color_02 << std::endl;
-							if (pos[0] == 261 && pos[1] == 383)
-								std::cout << "Check 2 " << coord << " " << u_win << " " << v_win << " " << s[1] << " " << t[0] << " " << color_02 << std::endl;
 						}
 						else
 							color_02 = cv::Vec<typeT, 4>(0, 0, 0, 0);
@@ -825,10 +817,6 @@ void generateViewPortTexture(std::string textureFile, uint usize, uint vsize, ui
 						{
 							color_01 = texture.texture.at<cv::Vec4b>(coord);
 							color_01 /= 255;
-							if (pos[0] == 250 && pos[1] == 128)
-								std::cout << "Check 1 " << coord << " " << u_win << " " << v_win << " " << s[0] << " " << t[1] << " " << color_01 << std::endl;
-							if (pos[0] == 261 && pos[1] == 383)
-								std::cout << "Check 2 " << coord << " " << u_win << " " << v_win << " " << s[0] << " " << t[1] << " " << color_01 << std::endl;
 						}
 						else
 							color_01 = cv::Vec<typeT, 4>(0, 0, 0, 0);
@@ -838,10 +826,6 @@ void generateViewPortTexture(std::string textureFile, uint usize, uint vsize, ui
 						{
 							color_02 = texture.texture.at<cv::Vec4b>(coord);
 							color_02 /= 255;
-							if (pos[0] == 250 && pos[1] == 128)
-								std::cout << "Check 1 " << coord << " " << u_win << " " << v_win << " " << s[1] << " " << t[1] << " " << color_02 << std::endl;
-							if (pos[0] == 261 && pos[1] == 383)
-								std::cout << "Check 2 " << coord << " " << u_win << " " << v_win << " " << s[1] << " " << t[1] << " " << color_02 << std::endl;
 						}
 						else
 							color_02 = cv::Vec<typeT, 4>(0, 0, 0, 0);
@@ -950,43 +934,37 @@ int main(int argc, char *argv[])
 		//experiment(1024,512,64,32,3), 
 	};
 
-	//std::vector<viewer> viewList = {
-	//	viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
-	//	viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,1),
-	//	viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
-	//	viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
-	//	viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,1),
-	//	viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
-
-	//	viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,1),
-	//	viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,1),
-	//	viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,1),
-	//	viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,1),
-	//	viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,1),
-	//	viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,1),
-
-	//	viewer(vec3T(0, 10, 0),vec3T(0,-1, 0),512,512,60,1),
-	//	viewer(vec3T(0, -10, 0),vec3T(0, 1, 0),512,512,60,1),
-
-	//	//viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
-	//	//viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,50),
-	//	//viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
-	//	//viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
-	//	//viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,5),
-	//	//viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
-
-	//	//viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,5),
-	//	viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,5),
-	//	//viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,5),
-	//	//viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,5),
-	//	//viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,5),
-	//	//viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,5),
-	//};
-
-
 	std::vector<viewer> viewList = {
+		viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,1),
+		viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+		viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,1),
+		viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,1),
 
-	viewer(vec3T(0, 10, 0),vec3T(0, -1, 0),512,512,60,1),
+		viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,1),
+		viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,1),
+
+		viewer(vec3T(0, 10, 0),vec3T(0,-1, 0),512,512,60,1),
+		viewer(vec3T(0, -10, 0),vec3T(0, 1, 0),512,512,60,1),
+
+		//viewer(vec3T(-3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(0, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(3, 0, 10),vec3T(0, 0, -1),512,512,60,50),
+		//viewer(vec3T(-3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+		//viewer(vec3T(0, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+		//viewer(vec3T(3, 0, -10),vec3T(0, 0, 1),512,512,60,5),
+
+		//viewer(vec3T(10, 0, -3),vec3T(-1, 0, 0),512,512,60,5),
+		viewer(vec3T(10, 0, 0),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(10, 0, 3),vec3T(-1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, -3),vec3T(1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, 0),vec3T(1, 0, 0),512,512,60,5),
+		//viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,5),
 	};
 
 	//std::string filePaste = "D:/teste/generator/";
@@ -998,7 +976,7 @@ int main(int argc, char *argv[])
 		experiment exp = expList[i];
 		std::string textureName = "texture_u" + std::to_string(exp.usize) + "_v" + std::to_string(exp.vsize) +
 			"_s" + std::to_string(exp.ssize) + "_t" + std::to_string(exp.tsize) + "_ws" + std::to_string(exp.windowSize) + ".png";
-		//generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
+		generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
 
 		for (int j = 0; j < viewList.size(); j++) {
 			std::cout << "Viewer Texture " << j << std::endl;
