@@ -37,8 +37,8 @@ __device__ void normalize(T* vec) {
 
 template<class T>
 __global__ void raylightgenerator_kernel(T* out, size_t start, int* size, const T radius, const int wsTotal) {
-	int globalIndex = start + blockIdx.x;
-	int u, v, s, t;
+	size_t globalIndex = start + blockIdx.x;
+	size_t u, v, s, t;
 	int ws = gridDim.y;
 	t = globalIndex % size[3];
 	u = globalIndex / size[3];
