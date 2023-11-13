@@ -388,11 +388,11 @@ void CudaPointers<T>::pixelReduction(int wsTotal, int length) {
 }
 
 template<class T>
-void CudaPointers<T>::downloadPixelColor(cv::Vec<T, 4>* data, size_t count, size_t start) {
+void CudaPointers<T>::downloadPixelColor(cv::Vec<T, 4>* data, size_t count, size_t startCPU, size_t startGPU) {
 	cudaError_t cudaStatus;
-	std::cout << "Hello from download " << count << " " << start << std::endl;
+	std::cout << "Hello from download, StartCPU " << startCPU <<  " StartGPU " << startGPU << " Length " << count << std::endl;
 	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(data, d_colorList + 4 * start, sizeof(cv::Vec<T, 4>) * count, cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(data + startCPU, d_colorList + 4 * startGPU, sizeof(cv::Vec<T, 4>) * count, cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_rayList Device to Host as PixelColor!\n");
 	}

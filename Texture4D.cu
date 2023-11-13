@@ -240,7 +240,7 @@ void Texture4D<T>::compileToVideo(std::string s) {
 template <class T>
 void Texture4D<T>::compileToImage(std::string s, int subimg) {
 	//cv::Mat out = cv::Mat(vsize * tsize, usize * ssize, CV_8UC4);
-	std::cout << "Hello from compiletoImage" << std::endl;
+	std::cout << "Hello from compileToImage" << std::endl;
 	cv::Mat img;
 	texture.convertTo(img, CV_8UC4, 255);
 
@@ -259,7 +259,7 @@ void Texture4D<T>::compileToImage(std::string s, int subimg) {
 	size_t indexfirst = s.find_last_of('\\') + 1;
 	size_t indexlast = s.find_last_of('.');
 	name = s.substr(indexfirst, indexlast - indexfirst);
-	std::cout << "Gerando arquivo: " << name << std::endl;
+	std::cout << "Gerando arquivo: " << name << std::endl <<std::endl;
 	name = s.substr(0, indexlast);
 	name += "_" + std::to_string(subimg) + ".png";
 	cv::imwrite(name, img);

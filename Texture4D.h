@@ -18,8 +18,9 @@ public:
 	T* d_out = 0;
 	int* d_size = 0;
 
-	Texture4D(size_t usize, size_t vsize, size_t ssize, size_t tsize) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), totalSize(usize* vsize* ssize* tsize) {
-		texture = cv::Mat::zeros(16384, 16384, CV_64FC4);
+	Texture4D(size_t usize, size_t vsize, size_t ssize, size_t tsize, bool debug = false) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), totalSize(usize* vsize* ssize* tsize) {
+		if(!debug)texture = cv::Mat::zeros(16384, 16384, CV_64FC4);
+		else texture = cv::Mat::zeros(usize, vsize, CV_64FC4);
 	}
 	~Texture4D() {
 		texture.release();

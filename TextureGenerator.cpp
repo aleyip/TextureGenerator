@@ -319,11 +319,14 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, si
 	const int ws = windowSize * 2 + 1;
 	const int wsTotal = ws * ws * ws * ws;
 
+	std::cout << "  as as a " << fileName << std::endl;
+
 	bufferSize = BUFFERSIZE / wsTotal;
 	totalSize = usize * vsize * ssize * tsize;
 
 	size_t size[] = { usize,vsize,ssize,tsize };
 	Texture4DT tex = Texture4DT(size[0], size[1], size[2], size[3]);
+	//Texture4DT tex = Texture4DT(200, 100, 1, 1, true);
 	std::cout << tex.texture.total() << std::endl;
 
 	printf("Generate Texture Cuda\n");
@@ -358,6 +361,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, si
 
 	int totalImage = tex.totalSize / 268435456;
 	int nImage = 0;
+	size_t startDown = 0;
 	indexCopy = 0;
 	
 	while (countLoop < totalSize)
@@ -366,7 +370,10 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, si
 
 		bufferTotal = length * wsTotal;
 
-		std::cout << countLoop << "/" << totalSize << " " << (double)countLoop / totalSize * 100 << "%" << std::endl;
+		auto end = std::chrono::system_clock::now();
+		std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+
+		std::cout << countLoop << "/" << totalSize << " " << (double)countLoop / totalSize * 100 << "% " << std::ctime(&end_time) << std::endl;
 
 		tex.RayLightGeneratorCuda(countLoop, length, radius, ws, wsTotal, cp);
 
@@ -382,21 +389,21 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, si
 
 		cp.pixelReduction(wsTotal, length);
 
-		indexCopy += length;
+		indexCopy = startDown + length;
 		if (indexCopy > tex.texture.total())
 		{
 			size_t dif = bufferSize - (indexCopy - tex.texture.total());
-			cp.downloadPixelColor(dataPixel, dif);
+			cp.downloadPixelColor(dataPixel, dif, startDown);
 			tex.compileToImage(fileName, nImage);
 			nImage++;
-			dataPixel = (cv::Vec<typeT, 4>*)tex.texture.data;
-			cp.downloadPixelColor(dataPixel, length - dif, dif);
-			dataPixel -= dif;
-			indexCopy = 0;
+			startDown = 0;
+			cp.downloadPixelColor(dataPixel, length - dif, startDown, dif);
+			startDown -= dif;
+			//indexCopy = 0;
 		}
 		else
 		{
-			cp.downloadPixelColor(dataPixel, length);
+			cp.downloadPixelColor(dataPixel, length, startDown);
 		}
 
 		//auto end = std::chrono::steady_clock::now();
@@ -405,7 +412,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, si
 		//	<< " ms" << std::endl;
 		//return;
 		countLoop += length;
-		dataPixel += length;
+		startDown += length;
 		if (totalSize - countLoop < bufferSize)
 		{
 			length = totalSize - countLoop;
@@ -900,15 +907,13 @@ int main(int argc, char *argv[])
 
 	// < 2^31
 	std::vector<experiment> expList = {
-		experiment(512,256,64,64,0),
-		experiment(512,256,64,32,0),
+		//experiment(512,256,64,64,0),
+		//experiment(512,256,64,64,3),
+		//experiment(512,256,64,32,0),
 		//experiment(128,64,16,16,3),
-		// experiment(1024,512,64,64,3),
-		// experiment(1024,512,128,128,3),
+		//experiment(1024,512,64,64,3),
 		//experiment(512,256,32,32,0),
 		//experiment(512,256,64,64,3),
-		// experiment(512,256,128,128,3),
-		// experiment(1024,512,64,64,0),
 		//experiment(512,256,32,32,3),
 		//experiment(512,256,32,32,0),
 		//experiment(512,256,32,32,3),
@@ -920,6 +925,10 @@ int main(int argc, char *argv[])
 		//experiment(512,256,64,64,3),
 		//experiment(1024,512,64,32,0),
 		//experiment(1024,512,64,32,3), 
+		experiment(1024,512,128,128,3),
+		experiment(512,256,128,128,3),
+		experiment(512,256,128,128,0),
+		//experiment(1024,512,64,64,0),
 	};
 
 	std::vector<viewer> viewList = {
@@ -964,7 +973,7 @@ int main(int argc, char *argv[])
 		experiment exp = expList[i];
 		std::string textureName = "texture_u" + std::to_string(exp.usize) + "_v" + std::to_string(exp.vsize) +
 			"_s" + std::to_string(exp.ssize) + "_t" + std::to_string(exp.tsize) + "_ws" + std::to_string(exp.windowSize) + ".png";
-		//generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
+		generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
 
 		for (int j = 0; j < viewList.size(); j++) {
 			std::cout << "Viewer Texture " << j << std::endl;
