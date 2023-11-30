@@ -58,7 +58,57 @@ using LightT = Light<typeT>;
 using PointLightT = PointLight<typeT>;
 using DirectionalLightT = DirectionalLight<typeT>;
 
-void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
+struct experiment {
+	int usize;
+	int vsize;
+	int ssize;
+	int tsize;
+
+	int windowSize;
+	experiment(int usize, int vsize, int ssize, int tsize, int ws) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), windowSize(ws) {};
+	size_t totalSize() {
+		return (size_t)usize * (size_t)vsize * (size_t)ssize * (size_t)tsize;
+	}
+};
+
+struct viewer {
+	vec3T position;
+	vec3T direction;
+	int width;
+	int height;
+	double fov;
+	int aliasing;
+	viewer(vec3T pos, vec3T dir, int width, int height, double fov, int alias) :position(pos), direction(dir), width(width), height(height), fov(fov), aliasing(alias) {};
+};
+
+struct pairExpIndex {
+	experiment exp;
+	int row;
+	int col;
+	pairExpIndex(experiment exp, int row, int col) : exp(exp), row(row), col(col) {}
+};
+
+struct pathway {
+	vec3T initialPosition;
+	vec3T finalPosition;
+	vec3T direction;
+	float velocity;
+	pathway(vec3T initialPosition, vec3T finalPosition, vec3T direction, float velocity) : initialPosition(initialPosition), finalPosition(finalPosition), direction(direction), velocity(velocity) {}
+};
+
+struct video {
+	std::vector<pathway> pathVec;
+	int individualWidth;
+	int individualHeight;
+	double fov;
+	int aliasing;
+	int fps;
+	std::vector<pairExpIndex> experiment;
+	video(std::vector<pathway> pathVec, int individualWidth, int individualHeight, double fov, int aliasing, int fps, std::vector<pairExpIndex> experiment) :
+		pathVec(pathVec), individualWidth(individualWidth), individualHeight(individualHeight), fov(fov), aliasing(aliasing), fps(fps), experiment(experiment) {}
+};
+
+cv::Mat generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
 	//PointLight<typeT> light = PointLight<typeT>(vec3T(-6, 4.5, 2), cv::Vec<typeT, 3>(1, 1, 1));
 	
 	viewerPos.x *= -1;
@@ -113,9 +163,10 @@ void generateViewPort(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T view
 	cv::resize(img, img, cv::Size(width, height));
 	img.convertTo(img, CV_8UC4, 255, 0);
 	std::cout << "Creating image: " << nameFile << std::endl;
-	cv::imwrite(nameFile, img);
+	if(nameFile.compare("") != 0)
+		cv::imwrite(nameFile, img);
 
-	img.release();
+	return img;
 }
 
 void generateViewPortCuda(ObjectT** obj, LightT** light, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
@@ -364,7 +415,7 @@ void generateTextureCuda(ObjectT** obj, LightT** light, std::string fileName, si
 	int nImage = 0;
 	size_t startDown = 0;
 	indexCopy = 0;
-	
+
 	while (countLoop < totalSize)
 	{
 		auto start = std::chrono::steady_clock::now();
@@ -655,7 +706,7 @@ void generateMapsCuda(ObjectT** obj, std::string fileName, int usize, int vsize,
 	//cv::imwrite("D:/testeHeightMap.png", img);
 }
 
-void generateViewPortTexture(std::string textureFile, uint usize, uint vsize, uint ssize, uint tsize, float sphereRadius, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
+cv::Mat generateViewPortTexture(std::string textureFile, uint usize, uint vsize, uint ssize, uint tsize, float sphereRadius, vec3T viewerPos, vec3T viewerDir, typeT fov, std::string nameFile, int width, int height, int aliasing) {
 
 	cv::Mat img = cv::Mat::zeros(width * aliasing, height * aliasing, CV_64FC4);
 	typeT halfHeight = tan(fov * 0.01745329251994329576923690768489 / 2.);
@@ -876,32 +927,72 @@ void generateViewPortTexture(std::string textureFile, uint usize, uint vsize, ui
 	std::cout << "Count Collision: " << count << std::endl;
 	cv::resize(img, img, cv::Size(width, height), 0, 0, cv::INTER_AREA);
 	img.convertTo(img, CV_8UC4, 255, 0);
-	cv::imwrite(nameFile, img);
+	if(nameFile.compare("") != 0)
+		cv::imwrite(nameFile, img);
 	std::cout << std::endl << std::endl;
-
-	img.release();
+	return img;
+	//img.release();
 }
 
-struct experiment{
-	int usize;
-	int vsize;
-	int ssize;
-	int tsize;
+void generateVideo(video vid, std::string nameFile, std::string filePaste, ObjectT** obj, LightT** light)
+{
+	const int borderSize = 1;
 
-	int windowSize;
-	experiment(int usize, int vsize, int ssize, int tsize, int ws) : usize(usize), vsize(vsize), ssize(ssize), tsize(tsize), windowSize(ws) {};
-} ;
+	int maxCol = 0, maxRow = 0;
+	for (pairExpIndex exp : vid.experiment)
+	{
+		if (maxCol < exp.col)
+			maxCol = exp.col;
+		if (maxRow < exp.row)
+			maxRow = exp.row;
+	}
+	cv::Size videoSize = cv::Size((maxCol + 1) * vid.individualWidth + (2 + maxCol) * borderSize, (maxRow + 1) * vid.individualHeight + (2 + maxRow) * borderSize);
+	cv::VideoWriter vw = cv::VideoWriter(nameFile, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), vid.fps, videoSize);
 
-struct viewer {
-	vec3T position;
-	vec3T direction;
-	int width;
-	int height;
-	double fov;
-	int aliasing;
-	viewer(vec3T pos, vec3T dir, int width, int height, double fov, int alias) :position(pos), direction(dir), width(width), height(height), fov(fov), aliasing(alias) {};
-};
+	cv::Mat image = cv::Mat::zeros(videoSize, CV_8UC3);
+	for (pathway& path : vid.pathVec)
+	{
+		vec3T pos = path.initialPosition;
+		vec3T endPos = path.finalPosition;
+		vec3T disp_frame = endPos - pos;
+		long number_frame = sqrt(disp_frame.dot(disp_frame)) * (vid.fps / path.velocity);
+		disp_frame.normalize();
+		disp_frame = disp_frame * (path.velocity / vid.fps);
+		std::cout << "disp_frame: " << disp_frame.x << " " << disp_frame.y << " " << disp_frame.z << std::endl;
 
+		cv::Mat frame_img;
+		for (long frame = 0; frame < number_frame; frame++)
+		{
+			std::cout << "Position: " << pos.x << " " << pos.y << " " << pos.z << std::endl;
+			for (pairExpIndex experiment : vid.experiment)
+			{
+				std::cout << experiment.row << " " << experiment.col << std::endl;
+				if (experiment.exp.totalSize() == 0)
+				{
+					frame_img = generateViewPort(obj, light, pos, path.direction, vid.fov, "", vid.individualWidth, vid.individualHeight, vid.aliasing);
+					cv::putText(frame_img, "Direct Render", cv::Point(5, vid.individualHeight - 32), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
+				}
+				else
+				{
+					std::string textureName = "texture_u" + std::to_string(experiment.exp.usize) + "_v" + std::to_string(experiment.exp.vsize) +
+						"_s" + std::to_string(experiment.exp.ssize) + "_t" + std::to_string(experiment.exp.tsize) + "_ws" + std::to_string(experiment.exp.windowSize) + ".png";
+					frame_img = generateViewPortTexture(filePaste + textureName, experiment.exp.usize, experiment.exp.vsize, experiment.exp.ssize, experiment.exp.tsize, 3.5, pos, path.direction, vid.fov, "", vid.individualWidth, vid.individualHeight, vid.aliasing);
+					std::string sizeString = std::to_string(experiment.exp.usize) + "x" + std::to_string(experiment.exp.vsize) +
+						"x" + std::to_string(experiment.exp.ssize) + "x" + std::to_string(experiment.exp.tsize);
+					cv::putText(frame_img, sizeString, cv::Point(5, vid.individualHeight - 32), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 0, 0), 2);
+				}
+				cv::Rect rect = cv::Rect(vid.individualWidth * experiment.col + (1 + experiment.col) * borderSize, vid.individualHeight * experiment.row + (1 + experiment.row) * borderSize, vid.individualWidth, vid.individualHeight);
+				std::cout << experiment.row << " " << experiment.col << " " << rect << std::endl;
+				cv::cvtColor(frame_img, frame_img, cv::COLOR_BGRA2BGR);
+				frame_img.copyTo(image(rect));
+			}
+			///cv::imwrite("D:\\TextureGenerator\\NewImage\\teste.jpg", image);
+			vw.write(image);
+			pos = pos + disp_frame;
+			std::cout << "Position2: " << pos.x << " " << pos.y << " " << pos.z << std::endl;
+		}
+	}
+}
 
 int main(int argc, char *argv[])
 {
@@ -976,6 +1067,16 @@ int main(int argc, char *argv[])
 		//viewer(vec3T(-10, 0, 3),vec3T(1, 0, 0),512,512,60,5),
 	};
 
+	video vidInfo = video(
+		std::vector<pathway>({
+			pathway(vec3T(-3, 0, 10), vec3T(3, 0, 10), vec3T(0, 0, -1), 1.f)
+			}),
+		512, 512, 60, 5, 24,
+		std::vector<pairExpIndex>({
+		pairExpIndex(experiment(0,0,0,0,0),0,0),
+		pairExpIndex(experiment(512,256,64,64,3),0,1)
+		}));
+
 	//std::string filePaste = "D:/teste/generator/";
 	std::string filePaste = argv[1];
 
@@ -985,8 +1086,11 @@ int main(int argc, char *argv[])
 		experiment exp = expList[i];
 		std::string textureName = "texture_u" + std::to_string(exp.usize) + "_v" + std::to_string(exp.vsize) +
 			"_s" + std::to_string(exp.ssize) + "_t" + std::to_string(exp.tsize) + "_ws" + std::to_string(exp.windowSize) + ".png";
-		generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
 
+		//Gera Textura
+		//generateTextureCuda(obj, light, filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, exp.windowSize);
+
+		//Gera ViewPort com base na textura
 		for (int j = 0; j < viewList.size(); j++) {
 			std::cout << "Viewer Texture " << j << std::endl;
 			viewer view = viewList[j];
@@ -999,10 +1103,11 @@ int main(int argc, char *argv[])
 				"_" + (view.direction.z < 0 ? "m" + std::to_string(abs(view.direction.z)) : std::to_string(view.direction.z)) +
 				"__al_" + std::to_string(view.aliasing);
 			//generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + "rend.png", view.width, view.height, view.aliasing);
-			generateViewPortTexture(filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, 3.5, view.position, view.direction, view.fov, fileName + "text.png", view.width, view.height, view.aliasing);
+			//generateViewPortTexture(filePaste+textureName, exp.usize, exp.vsize, exp.ssize, exp.tsize, 3.5, view.position, view.direction, view.fov, fileName + "text.png", view.width, view.height, view.aliasing);
 		}
 	}
 
+	//Gera ViewPort com base nos object render
 	for (int j = 0; j < viewList.size(); j++) {
 		std::cout << "Viewer Render " << j << std::endl;
 		viewer view = viewList[j];
@@ -1014,33 +1119,10 @@ int main(int argc, char *argv[])
 			"_" + (view.direction.y < 0 ? "m" + std::to_string(abs(view.direction.y)) : std::to_string(view.direction.y)) +
 			"_" + (view.direction.z < 0 ? "m" + std::to_string(abs(view.direction.z)) : std::to_string(view.direction.z)) +
 			"__al_" + std::to_string(view.aliasing);
-		generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + ".png", view.width, view.height, view.aliasing);
+		//generateViewPort(obj, light, view.position, view.direction, view.fov, fileName + ".png", view.width, view.height, view.aliasing);
 	}
 
-	//generateTexture(obj, light, "D:/testeGeneratorCuda2.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
-	//generateTextureCuda(obj, light, "D:/testeGeneratorCuda3.png", U_SIZE, V_SIZE, S_SIZE, T_SIZE, 0);
-	//generateViewPort(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeView.png", 4000, 4000, 1);
-	//generateViewPortCuda(obj, light, vec3T(-6, 0, 0), vec3T(1, 0, 0), 90, "D:/testeViewCuda.png", 1024, 1024, 1);
-	//generateViewPort(obj, light, vec3T(0, 0, 100), vec3T(0, 0, -1), 5, "1_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(100, 0, 0), vec3T(-1, 0, 0), 5, "D:/2_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(-100, 0, 0), vec3T(1, 0, 0), 5, "D:/3_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(0, 0, -100), vec3T(0, 0, 1), 5, "D:/4_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(75, 0, 75), vec3T(-1, 0, -1), 5, "D:/5_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(75, 0, -75), vec3T(-1, 0, 1), 5, "D:/6_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(-75, 0, 75), vec3T(1, 0, -1), 5, "D:/7_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(-75, 0, -75), vec3T(1, 0, 1), 5, "D:/8_testeView.png", 257, 257, 1);
-	//generateViewPort(obj, light, vec3T(-50, -50, -50), vec3T(1, 1, 1), 5, "D:/9_testeView.png", 257, 257, 1);
-	//generateMaps(obj);
-	//generateMapsCuda(obj);	
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(0, 0, 100), vec3T(0, 0, -1), 5, "D:/1_testeViewportTexture.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(100, 0, 0), vec3T(-1, 0, 0), 5, "D:/2_testeViewportTexture2.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-100, 0, 0), vec3T(1, 0, 0), 5, "D:/3_testeViewportTexture2.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(0, 0, -100), vec3T(0, 0, 1), 5, "D:/4_testeViewportTexture2.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(75, 0, 75), vec3T(-1, 0, -1), 5, "D:/5_testeViewportTexture.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(75, 0, -75), vec3T(-1, 0, 1), 5, "D:/6_testeViewportTexture.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-75, 0, 75), vec3T(1, 0, -1), 5, "D:/7_testeViewportTexture.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-75, 0, -75), vec3T(1, 0, 1), 5, "D:/8_testeViewportTexture.png", 257, 257, 1);
-	//generateViewPortTexture("D:/testeGeneratorCuda.png", 512, 256, 33, 33, 3.5, vec3T(-50, -50, -50), vec3T(1, 1, 1), 5, "D:/9_testeViewportTexture.png", 257, 257, 1);
+	generateVideo(vidInfo, filePaste + "demonstration_video.avi", filePaste, obj, light);
 
 	return 0;
 }
