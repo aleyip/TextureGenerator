@@ -26,7 +26,7 @@ public:
 	}
 
 	void uploadRayList(RayLight<T>* rayList, int length);
-	void downloadRayList(RayLight<T>* rayList, int length);
+	void downloadRayList(RayLight<T>* data, size_t count, size_t startCPU = 0, size_t startGPU = 0);
 
 	void normalReduction(int wsTotal, int count);
 	void uploadNormalList(vec3<T>* normalList, int length);

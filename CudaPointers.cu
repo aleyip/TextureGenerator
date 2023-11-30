@@ -147,16 +147,6 @@ void CudaPointers<T>::uploadRayList(RayLight<T>* rayList, int length) {
 	}
 }
 
-template<class T>
-void CudaPointers<T>::downloadRayList(RayLight<T>* rayList, int length) {
-	cudaError_t cudaStatus;
-	// Transfer data back to host memory
-	cudaStatus = cudaMemcpy(rayList, d_rayList, sizeof(RayLight<T>) * length, cudaMemcpyDeviceToHost);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy failed in d_rayList Device to Host!\n");
-	}
-}
-
 template <class T>
 cudaError_t NormalReduction_wrapper(int length, int wsTotal, CudaPointers<T>& cp) {
 	cudaError_t cudaStatus;
@@ -393,6 +383,18 @@ void CudaPointers<T>::downloadPixelColor(cv::Vec<T, 4>* data, size_t count, size
 	std::cout << "Hello from download, StartCPU " << startCPU <<  " StartGPU " << startGPU << " Length " << count << std::endl;
 	// Transfer data back to host memory
 	cudaStatus = cudaMemcpy(data + startCPU, d_colorList + 4 * startGPU, sizeof(cv::Vec<T, 4>) * count, cudaMemcpyDeviceToHost);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed in d_rayList Device to Host as PixelColor!\n");
+	}
+	std::cout << "Bye from download" << std::endl;
+}
+
+template<class T>
+void CudaPointers<T>::downloadRayList(RayLight<T>* data, size_t count, size_t startCPU, size_t startGPU) {
+	cudaError_t cudaStatus;
+	std::cout << "Hello from download, StartCPU " << startCPU << " StartGPU " << startGPU << " Length " << count << std::endl;
+	// Transfer data back to host memory
+	cudaStatus = cudaMemcpy(data + startCPU, d_rayList + 6 * startGPU, sizeof(cv::Vec<T, 6>) * count, cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed in d_rayList Device to Host as PixelColor!\n");
 	}
